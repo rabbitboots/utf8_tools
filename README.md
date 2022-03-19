@@ -12,9 +12,9 @@ Some UTF-8 utility functions for Lua.
 
 ## Terms
 
-* Code point: A unicode "character". In this module, code points are stored as number values.
+* Code point: A unicode "character", stored in this module as a number.
 
-* Code unit: A UTF-8 encoded representation of a unicode code point, 1-4 bytes in size. In this module, individual code units are stored as strings.
+* Code unit: A UTF-8 encoded representation of a unicode code point, 1-4 bytes in size.
 
 
 ## Public Functions
