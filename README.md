@@ -29,7 +29,7 @@ Some UTF-8 utility functions for Lua.
 
 * `utf8Tools.u8UnitToCodePoint(unit_str)`: Tries to convert a UTF-8 code unit in string form to a numeric Unicode code point. Returns either a number, or a number plus an error string. If the former, the module thinks this is a good code point. If the latter, the number is likely bad data, and the error string describes what went wrong in the conversion attempt. The caller is responsible for checking this, and deciding whether to move forward with the bad data or to discard it.
 
-* `utf8Tools.u8CodePointToUnit(code_point_num)`: Tries to convert a Unicode code point in numeric form to a UTF-8 code unit string. Returns either a code unit string, or a code unit string plus an error string. If the former, the module thinks this is a good code unit. If the latter, the code unit is likely bad data, and the error string describes what went wrong in the conversion attempt. The caller is responsible for checking this, and deciding whether to move forward with the bad data or to discard it.
+* `utf8Tools.u8CodePointToUnit(code_point_num)`: Tries to convert a Unicode code point in numeric form to a UTF-8 code unit string. Returns either a code unit string, or a code unit string plus an error string. Like with `u8UnitToCodePoint()`, the presence of a second return value means there was a problem in the conversion and the code unit is bad.
 
 
 ## Options
