@@ -1,10 +1,9 @@
---local path = ... and (...):match("(.-)[^%.]+$") or ""
 local utf8Tools = {
-	_VERSION = "1.0.0",
+	_VERSION = "1.1.0",
 	_URL = "https://github.com/rabbitboots/utf8_tools",
 	_DESCRIPTION = "UTF-8 utility functions for Lua.",
 	_LICENSE = [[
-	Copyright (c) 2022 RBTS
+	Copyright (c) 2022, 2023 RBTS
 
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
@@ -38,6 +37,7 @@ local utf8Tools = {
 	https://en.wikipedia.org/wiki/Unicode
 --]]
 
+
 local options = {}
 utf8Tools.options = options
 
@@ -45,7 +45,7 @@ utf8Tools.options = options
 -- but some decoders allow them through.
 options.check_surrogates = true
 
--- Exclude certain bytes forbidden by the spec when calling getCodeUnit().
+-- Exclude certain bytes forbidden by the spec when calling getUCString().
 options.match_exclude = true
 
 -- Lookup Tables and Patterns
@@ -59,21 +59,21 @@ local function makeLUT(seq)
 end
 
 --[[
-	Here are some Lua string patterns which can be used to parse UTF-8 code units.
+	Here are some Lua string patterns which can be used to parse UTF-8-encoded code points.
 
 	charpattern: This is a (slightly modified) pattern from Lua 5.3's utf8 library
-		which matches exactly one UTF-8 code unit. It assumes the string being parsed
-		is valid UTF-8. (It can match overly long code units.)
+		which matches exactly one UTF-8 sequence. It assumes the string being
+		parsed is valid UTF-8. (It can match overly long sequences.)
 		Source: http://www.lua.org/manual/5.3/manual.html#6.5
 
-	u8_ptn_t: Table of patterns used to grab UTF-8 code units in getCodeUnit(). All
+	u8_ptn_t: Table of patterns used to grab UTF-8 sequences in getUCString(). All
 		patterns are anchored with '^'.
 
 	u8_ptn_excl_t: Like u8_ptn_t, but some forbidden bytes are excluded in the pattern
 		ranges.
 
 	u8_oct_1: Just the first byte from utf8.charpattern. Matches a "first octet",
-		and could be used to skip to the next code unit in a string, without failing
+		and could be used to skip to the next UTF-8 sequence in a string, without failing
 		on further issues in the subsequent bytes.
 
 --]]
@@ -129,7 +129,6 @@ local function _errStrInvalidOctet(pos, val)
 	return "Invalid octet value (" .. val .. ") in byte #" .. pos
 end
 
-
 -- / Assertions, Error Messages
 
 -- Internal Logic
@@ -161,12 +160,12 @@ local function _checkFollowingOctet(octet, position, n_octets)
 end
 
 
---- Convert 1-4 UTF-8 code unit octets (in number form) to the matching Unicode Code Point. Does no error detection.
--- @param n_octets Number of octets in the code unit, from 1 to 4.
--- @param b1 First byte in the code unit.
--- @param b2 Second byte in the code unit, if applicable.
--- @param b3 Third byte in the code unit, if applicable.
--- @param b4 Fourth byte in the code unit, if applicable.
+--- Convert 1-4 UTF-8 octets (in number form) to the matching Unicode Code Point. Does no error detection.
+-- @param n_octets Number of octets in the UTF-8 sequence, from 1 to 4.
+-- @param b1 First byte in the UTF-8 sequence.
+-- @param b2 Second byte in the UTF-8 sequence, if applicable.
+-- @param b3 Third byte in the UTF-8 sequence, if applicable.
+-- @param b4 Fourth byte in the UTF-8 sequence, if applicable.
 -- @return the code point as a single number, or nil if 'n_octets' was not 1, 2, 3 or 4.
 local function _numberFromOctets(n_octets, b1, b2, b3, b4)
 	return n_octets == 1 and b1
@@ -190,7 +189,7 @@ end
 
 --- Check if a code point is bad.
 -- @param code_point the numeric Unicode code point to check.
--- @param u8_len How many octets this code point would have if expressed as a UTF-8 code unit. Set to false to disable this check (if the code point didn't originate from a UTF-8 code unit.)
+-- @param u8_len How many octets this code point would have if expressed as a UTF-8 sequence. Set to false to disable this check (if the code point didn't originate from a UTF-8 sequence.)
 local function _checkCodePointIssue(code_point, u8_len)
 	if options.check_surrogates then
 		if code_point >= 0xd800 and code_point <= 0xdfff then
@@ -200,7 +199,7 @@ local function _checkCodePointIssue(code_point, u8_len)
 	end
 
 	-- Look for overlong values based on the octet count
-	-- (Only applicable if known to have originated from a code unit.)
+	-- (Only applicable if known to have originated from a UTF-8 sequence.)
 	if u8_len ~= false then
 		local min_max = lut_oct_min_max[u8_len]
 		if code_point < min_max[1] or code_point > min_max[2] then
@@ -213,11 +212,11 @@ local function _checkCodePointIssue(code_point, u8_len)
 end
 
 
---- Check if a code unit string is bad.
--- @param str The string provided to getCodeUnit
+--- Check if a UTF-8 sequence string is bad.
+-- @param str The string provided to getUCString
 -- @param pos Position where it failed
 -- @return true if no issues found, or false plus error string with a diagnosis attempt
-local function _checkCodeUnitIssue(str, pos)
+local function _checkUCStringIssue(str, pos)
 	local b1, b2, b3, b4
 	b1 = string.byte(str, pos)
 	if not b1 then
@@ -238,7 +237,7 @@ local function _checkCodeUnitIssue(str, pos)
 
 	local err_str
 
-	-- Check subsequent bytes in longer code units
+	-- Check subsequent bytes in longer UTF-8 sequences.
 	-- Two bytes
 	if u8_len == 2 then
 		b2 = string.byte(str, pos+1)
@@ -300,7 +299,7 @@ local function _codePointToBytes(number)
 end
 
 
-local function _bytesToCodeUnit(b1, b2, b3, b4)
+local function _bytesToUCString(b1, b2, b3, b4)
 	if b4 then
 		return string.char(b1, b2, b3, b4)
 	elseif b3 then
@@ -316,11 +315,11 @@ end
 
 -- Public Functions -- Main Interface
 
---- Get a UTF-8 code unit from a string at a specific byte-position.
+--- Get a UTF-8 sequence from a string at a specific byte-position.
 -- @param str The string to examine.
--- @param pos The starting byte-position of the code unit in the string.
--- @return The code unit, as a string, or nil + error string if unable to get a valid UTF-8 code unit.
-function utf8Tools.getCodeUnit(str, pos)
+-- @param pos The starting byte-position of the UTF-8 sequence in the string.
+-- @return The UTF-8 sequence, as a string, or nil + error string if unable to get a valid UTF-8 sequence.
+function utf8Tools.getUCString(str, pos)
 	_assertArgType(1, str, "string")
 	_assertArgType(2, pos, "number")
 
@@ -328,7 +327,7 @@ function utf8Tools.getCodeUnit(str, pos)
 		return nil, "string index is out of bounds"
 	end
 
-	-- Run up to four patterns matching UTF-8 code units, 1-4 bytes in size, anchored to 'pos'.
+	-- Run up to four patterns matching UTF-8 sequences, 1-4 bytes in size, anchored to 'pos'.
 	-- These patterns exclude bytes forbidden by the RFC (see: lut_invalid_octet)
 	local u8_str
 	local u8_ptn = options.match_exclude and utf8Tools.u8_ptn_excl_t or utf8Tools.u8_ptn_t
@@ -342,13 +341,13 @@ function utf8Tools.getCodeUnit(str, pos)
 	-- The Lua string library isn't able to communicate why a pattern failed, so if there's
 	-- a problem, we'll have to do some additional work to identify the root cause.
 	if not u8_str then
-		local _, issue = _checkCodeUnitIssue(str, pos)
+		local _, issue = _checkUCStringIssue(str, pos)
 		issue = issue or "(Diagnosis failed. Possible issue with parsing or error handler?)"
 
-		return nil, "Unable to get code unit: " .. issue
+		return nil, "Unable to get UTF-8 sequence: " .. issue
 	end
 
-	-- Three-byte code units contain a forbidden surrogate range of 0xd800 to 0xdfff.
+	-- Three-byte UTF-8 sequences contain a forbidden surrogate range of 0xd800 to 0xdfff.
 	-- In UTF-8 form, this goes from ED A0 80 to ED A3 BF. it can be tested
 	-- by checking if the first two bytes are (0xed, 0xa0-0xa3).
 	if #u8_str == 3 and options.check_surrogates then
@@ -361,7 +360,7 @@ function utf8Tools.getCodeUnit(str, pos)
 end
 
 
---- If str[pos] is not a start byte, return the index of the next byte which resembles the first octet of a UTF-8 code unit. Does not validate the following bytes.
+--- If str[pos] is not a start byte, return the index of the next byte which resembles the first octet of a UTF-8 sequence. Does not validate the following bytes.
 -- @param str The string to march through.
 -- @param pos Starting position in the string.
 -- @return The next start index (or the same old index if it appeared to be a start byte), or nil if none found.
@@ -369,13 +368,19 @@ function utf8Tools.step(str, pos)
 	_assertArgType(1, str, "string")
 	_assertArgType(2, pos, "number")
 
+	-- Empty string
+	if #str == 0 and pos == 1 then
+		return nil
+	end
+
 	if pos < 1 or pos > #str then
 		error("argument #2 is out of bounds")
 	end
 
 	local i = string.find(str, utf8Tools.u8_oct_1, pos)
-	return (i) or nil
+	return i
 end
+
 
 -- / Public Functions -- Main Interface
 
@@ -398,18 +403,18 @@ function utf8Tools.invalidByteCheck(str)
 end
 
 
---- Scan a string for malformed UTF-8 code units (forbidden bytes[*1], code points in the surrogate range[*2], and
+--- Scan a string for malformed UTF-8 sequences (forbidden bytes[*1], code points in the surrogate range[*2], and
 --  mismatch between length marker and number of bytes.)
 --  [*1] 'options.match_exclude' must be true.
 --  [*2] 'options.check_surrogates' must be true.
 -- @param str The string to check.
--- @return Index, plus a string which attempts to diagnose the issue, or nil if no malformed code units were found.
-function utf8Tools.hasMalformedCodeUnits(str)
+-- @return Index, plus a string which attempts to diagnose the issue, or nil if no malformed UTF-8 sequences were found.
+function utf8Tools.hasMalformedUCStrings(str)
 	_assertArgType(1, str, "string")
 
 	local i = 1
 	while i <= #str do
-		local u8_str, err = utf8Tools.getCodeUnit(str, i)
+		local u8_str, err = utf8Tools.getUCString(str, i)
 		if not u8_str then
 			return i, err
 		end
@@ -423,38 +428,38 @@ end
 
 -- Public Functions: Conversions
 
---- Try to convert a UTF-8 Code Unit in string form to a Unicode Code Point number.
--- @param unit_str The string to convert. Must be between 1-4 bytes in size.
+--- Try to convert a UTF-8 sequence in string form to a Unicode Code Point number.
+-- @param u_str The string to convert. Must be between 1-4 bytes in size.
 -- @return The code point in number form, which may be invalid, and an error string if a problem
 -- was detected. If the second return value is nil, then this module thinks it's valid. Caller
 -- is responsible for deciding whether to accept or deny bad results.
-function utf8Tools.u8UnitToCodePoint(unit_str)
-	_assertArgType(1, unit_str, "string")
-	if #unit_str < 1 or #unit_str > 4 then
+function utf8Tools.ucStringToCodePoint(u_str)
+	_assertArgType(1, u_str, "string")
+	if #u_str < 1 or #u_str > 4 then
 		error("argument #1 must be a string 1-4 bytes in size")
 	end
 
-	local ok, err = _checkCodeUnitIssue(unit_str, 1)
+	local ok, err = _checkUCStringIssue(u_str, 1)
 
-	local code_point = _numberFromOctets(#unit_str, string.byte(unit_str, 1, 4))
+	local code_point = _numberFromOctets(#u_str, string.byte(u_str, 1, 4))
 
-	-- (No point in error-checking the code point if a problem was found with the code unit.)
+	-- (No point in error-checking the code point if a problem was found with the UTF-8 sequence.)
 	if err == nil then
 		local _
-		_, err = _checkCodePointIssue(code_point, #unit_str)
+		_, err = _checkCodePointIssue(code_point, #u_str)
 	end
 
 	return code_point, err
 end
 
 
---- Try to convert a Unicode Code Point in numeric form to a UTF-8 Code Unit string.
+--- Try to convert a Unicode Code Point in numeric form to a UTF-8 sequence.
 -- @param code_point_num The code point to convert. Must be an integer and at least 0. (WARNING: The high-end limit is not checked.)
--- @return the code unit in string form, which may be invalid, and an error string if there was a problem 
--- validating the code unit.
+-- @return the UTF-8 sequence in string form, which may be invalid, and an error string if there was a problem 
+-- validating the UTF-8 sequence.
 -- If the second return value is nil, then this module thinks it's valid. Caller is responsible for
 -- deciding whether to accept or deny bad results.
-function utf8Tools.u8CodePointToUnit(code_point_num)
+function utf8Tools.codePointToUCString(code_point_num)
 	if type(code_point_num) ~= "number" or code_point_num < 0 or code_point_num ~= math.floor(code_point_num) then
 		error("argument #1 must be an integer >= 0")
 	end
@@ -464,12 +469,14 @@ function utf8Tools.u8CodePointToUnit(code_point_num)
 		return "�", "failed to convert code point to UTF-8 bytes"
 	end
 
-	local u8_unit = _bytesToCodeUnit(b1, b2, b3, b4)
-	local ok, err = _checkCodeUnitIssue(u8_unit, 1)
+	local u8_seq = _bytesToUCString(b1, b2, b3, b4)
+	local ok, err = _checkUCStringIssue(u8_seq, 1)
 
-	return u8_unit, err
+	return u8_seq, err
 end
 
+
 -- / Public Functions: Conversions
+
 
 return utf8Tools
