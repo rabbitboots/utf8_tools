@@ -9,7 +9,7 @@ Some UTF-8 utility functions for Lua.
 
 * Tested with Lua 5.2.4, Lua 5.3.6, Lua 5.4.4 and LuaJIT 2.1.0-beta3 on Fedora 38.
 
-* Will not work as-is with Lua 5.1, due to change in search pattern escape codes.
+* Will not work as-is with Lua 5.1, due to an incompatibility with its search pattern escape codes.
 
 
 # Public Functions
