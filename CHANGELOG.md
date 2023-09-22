@@ -6,6 +6,8 @@
 
 * (#1) Fixed incorrect usage of the term *code unit* in source code and documentation. Renamed functions with the term `CodeUnit` to use `UCString` instead, where *UCString* refers to a single Unicode Code Point encoded in UTF-8 and stored as a Lua string. (*Code Unit* refers to the bytes in a code point encoded as UTF-8.) In some other cases (comments and error messages), *UTF-8 sequence* is used. See *Upgrade Guide From v1.0.0 to v1.1.0* for a list of affected public functions.
 
+* `utf8Tools.step()` will return `nil` if the provided string is empty and the start position is 1.
+
 * Updated and reformatted README.md. Minor updates to source comments.
 
 * Started changelog.
