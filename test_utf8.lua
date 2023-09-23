@@ -7,9 +7,7 @@ local strict = require(path .. "test.lib.strict")
 
 
 -- (This is only here because Lua 5.1 does not have the '\xFF' hex literal escapes for strings.)
-hex = function(...)
-	return string.char(...)
-end
+hex = string.char
 
 
 local samples = {
