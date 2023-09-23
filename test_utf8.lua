@@ -6,6 +6,12 @@ local errTest = require(path .. "test.lib.err_test")
 local strict = require(path .. "test.lib.strict")
 
 
+-- (This is only here because Lua 5.1 does not have the '\xFF' hex literal escapes for strings.)
+hex = function(...)
+	return string.char(...)
+end
+
+
 local samples = {
 	-- Thanks: https://www.utf8-chartable.de/unicode-utf8-table.pl
 
@@ -45,7 +51,7 @@ local samples = {
 }
 
 do
-	print("Test: " .. errTest.register(utf8Tools.getUCString, "utf8Tools.getUCString"))
+	print("\nTest: " .. errTest.register(utf8Tools.getUCString, "utf8Tools.getUCString"))
 
 	local ok, res
 
@@ -92,10 +98,10 @@ do
 	print(err)
 
 	print("\n[-] Arg #1 contains Nul as continuation byte (\\0)")
-	local ok_string  = "aaaa\xC3\x86aaaa" -- Æ
+	local ok_string  = "aaaa" .. hex(0xC3, 0x86) .. "aaaa" -- Æ
 	ok, ret = errTest.okErrExpectPass(utf8Tools.getUCString, ok_string, 5); print(ok, ret)
 
-	local bad_string = "aaaa\xC3\000aaaa"
+	local bad_string = "aaaa" .. hex(0xC3, 0x0) .. "aaaa"
 	ok, ret = errTest.okErrExpectFail(utf8Tools.getUCString, bad_string, 5); print(ok, ret)
 
 	print("\n[+] Arg #1 acceptable use of Nul (\\0)")
@@ -103,13 +109,13 @@ do
 	ok, ret = errTest.okErrExpectPass(utf8Tools.getUCString, ok_nul, 5); print(ok, ret)
 
 	print("\n[-] Arg #1 contains surrogate range code points")
-	local surr = "a\xED\xA0\x80b"
+	local surr = "a" .. hex(0xED, 0xA0, 0x80) .. "b"
 	local ret1, ret2 = errTest.okErrExpectFail(utf8Tools.getUCString, surr, 2); print(i, ret1, ret2)
 end
 
 
 do
-	print("Test: " .. errTest.register(utf8Tools.step, "utf8Tools.step"))
+	print("\nTest: " .. errTest.register(utf8Tools.step, "utf8Tools.step"))
 
 	local ok, res
 
@@ -123,6 +129,9 @@ do
 	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 0)
 	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 2^53)
 
+	print("\n[-] arg #2 not an integer")
+	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 0.5)
+
 	local test_str = "@Æㇹ𐅀"
 
 	for i = 1, #test_str do
@@ -132,38 +141,20 @@ end
 
 
 do
-	print("Test: " .. errTest.register(utf8Tools.invalidByteCheck, "utf8Tools.invalidByteCheck"))
+	print("\nTest: " .. errTest.register(utf8Tools.check, "utf8Tools.check"))
 
 	local ok, res
 
 	print("\n[-] arg #1 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.invalidByteCheck, nil)
+	ok, ret = errTest.expectFail(utf8Tools.check, nil)
 
 	print("\n[ad hoc] expected behavior")
-	print(utf8Tools.invalidByteCheck("\xC0\xC1\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF"))
-	print("^ (should return true, 1)")
-	print(utf8Tools.invalidByteCheck("Should return nil"))
-	print("^ (should return nil)")
-end
-
-
-do
-	print("Test: " .. errTest.register(utf8Tools.hasMalformedUCStrings, "utf8Tools.hasMalformedUCStrings"))
-
-	local ok, res
-
-	print("\n[-] arg #1 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.hasMalformedUCStrings, nil)
-
-	print("\n[ad hoc] expected behavior")
-	print(utf8Tools.hasMalformedUCStrings("goodgoodgoodgoodgoodb\xF0\x80\xE0d (should return true, 22)"))
-	print(utf8Tools.hasMalformedUCStrings("Should return nil"))
-	
-	-- This is just a loop-wrapper for getUCString(), which we tested earlier, so moving on...
+	print(utf8Tools.check("goodgoodgoodgoodgoodb" .. hex(0xF0, 0x80, 0xE0) .. "d (should return true, 22)"))
+	print(utf8Tools.check("Should return nil"))
 end
 
 do
-	print("Test: " .. errTest.register(utf8Tools.ucStringToCodePoint, "utf8Tools.ucStringToCodePoint"))
+	print("\nTest: " .. errTest.register(utf8Tools.ucStringToCodePoint, "utf8Tools.ucStringToCodePoint"))
 
 	local ok, res
 
@@ -171,13 +162,22 @@ do
 	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, nil)
 
 	print("\n[-] arg #1 string too short")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "")
+	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "", 1)
 
-	print("\n[-] arg #1 string too long")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345")
+	print("\n[-] arg #2 bad type")
+	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", false)
+
+	print("\n[-] arg #2 too low")
+	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", 0)
+
+	print("\n[-] arg #2 too high")
+	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", 99)
+
+	print("\n[-] arg #2 not an integer")
+	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", 0.333)
 
 	print("\n[ad hoc] Expected behavior.")
-	local good_point = utf8Tools.ucStringToCodePoint("Æ")
+	local good_point = utf8Tools.ucStringToCodePoint("Æ", 1)
 	print("good_point", good_point)
 	local ok, err = utf8Tools.codePointToUCString(good_point)
 	print("ok, err", ok, err)
@@ -186,26 +186,26 @@ do
 	end
 
 	print("\n[ad hoc] Pass in bad data.")
-	local bad_point, bad_err = utf8Tools.ucStringToCodePoint("\xF0\x80\xE0")
-	print("bad_point", bad_point, bad_err)
-
-	-- 'bad_point' is technically a valid code point, but it should not have been created
-	-- from [f0 80 e0]. The correct UTF-8 sequence would be [f0 90 81 a0]
-	local ok, err = utf8Tools.codePointToUCString(bad_point)
-	print("ok, err", ok, err, ("<- GIGO"))
+	local bad_point, bad_err = utf8Tools.ucStringToCodePoint(hex(0xF0, 0x80, 0xE0), 1)
+	print(bad_point, bad_err)
 end
 
 
 do
-	print("Test: " .. errTest.register(utf8Tools.codePointToUCString, "utf8Tools.codePointToUCString"))
+	print("\nTest: " .. errTest.register(utf8Tools.codePointToUCString, "utf8Tools.codePointToUCString"))
 
 	local ok, res
 
 	print("\n[-] arg #1 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.codePointToUCString, nil)
+	ok, res = errTest.expectFail(utf8Tools.codePointToUCString, nil)
 
-	print("\n[-] arg #1 invalid negative value")
-	ok, ret = errTest.expectFail(utf8Tools.codePointToUCString, -11111)
+	print("\n[ad hoc]: invalid negative code point")
+	ok, res = utf8Tools.codePointToUCString(-11111)
+	print(ok, res)
+
+	print("\n[ad hoc]: overlarge code point")
+	ok, res = utf8Tools.codePointToUCString(2^32)
+	print(ok, res)
 	
 	print("\n[ad hoc] expected behavior")
 	print(utf8Tools.codePointToUCString(33)) -- !
