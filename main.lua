@@ -1,70 +1,43 @@
 --[[
-Tests 4294967296 combinations of 1-4 bytes, passing them to LÖVE and utf8Tools.check()
-as UTF-8 sequences to compare validation results.
+utf8Tools.check() + LÖVE UTF-8 encoding tester.
 
-If utf8Tools.check passes any combo that LÖVE rejects, the test is considered a failure.
-LÖVE error messages are drawn on the left, while utf8Tools.check errors are on the right.
+Checks some known good and bad strings. If utf8Tools.check() passes a string that LÖVE rejects, the test is
+considered a failure.
 
-
-Super basic controls:
-
-up/down: scroll the error messages
--/=: decrease or increase the number of error messages drawn (reduced by default for performance reasons)
-escape: quit
-
-Upon completion, the total time spent is printed to the console.
+Output is printed to the console. If all goes well, the program automatically terminates.
 --]]
 
-local time_start = love.timer.getTime()
 
-love.keyboard.setKeyRepeat(true)
-
-local w1 = {"Fantastic", "Bombastic", "Terrific", "Emphatic", "Automatic", "Risible"}
-local w2 = {"utf8Tools.check"}
-local w3 = {"Tester", "Gauntlet", "Cyclone", "Tempest", "Thunderdome"}
-
-local rnd = love.math.random
-love.window.setTitle("The " .. w1[rnd(1, #w1)] .. " " .. w2[rnd(1, #w2)] .. " " .. " " .. w3[rnd(1, #w3)])
+love.window.setTitle("utf8Tools.check + LÖVE test")
 
 
 local utf8 = require("utf8")
 
+
 local utf8Tools = require("utf8_tools")
 
-
-local scroll_y = 0
-local max_err_draw = 16
-
-local counter = 0
-local bytes = {0}
-local done = false
-
-local n_mismatches = 0
-local love_errs = {}
-local uc_errs = {}
-
-local n_love_err = 0
-local n_uc_err = 0
 
 local font = love.graphics.newFont(16)
 
 
-local function cycle()
+local function hexString(str)
 
-	for i = #bytes, 1, -1 do
-		bytes[i] = nil
+	local out = ""
+	for i = 1, #str do
+		local byte = string.byte(str, i)
+		out = out .. string.format("%x", byte)
+		if i < #str then
+			out = out .. " "
+		end
 	end
 
-	local val = counter
-	while val > 0 do
-		table.insert(bytes, val % 256)
-		val = math.floor(val / 256)
-	end
+	return out
+end
 
-	local str = ""
-	for i = 1, #bytes do
-		str = str .. string.char(bytes[i])
-	end
+
+local function testString(str)
+
+	print("Test String: " .. hexString(str))
 
 	local font_getWidth = font.getWidth
 	local love_ok, love_err = pcall(font_getWidth, font, str)
@@ -72,96 +45,87 @@ local function cycle()
 	local uc_ok, uc_pos, uc_err = utf8Tools.check(str)
 
 	if not love_ok then
-		n_love_err = n_love_err + 1
+		print("\tLÖVE error: " .. love_err)
 	end
+
 	if not uc_ok then
-		n_uc_err = n_uc_err + 1
+		print("\tUC error: " .. uc_pos or "...", uc_err)
 	end
 
-	if (not not love_ok) ~= (not not uc_ok) then
-		if not love_ok then
-			--print("LÖVE error: " .. love_err)
-			love_errs[love_err] = love_errs[love_err] and love_errs[love_err] + 1 or 1
-		end
-		if not uc_ok then
-			--print("UC error: " .. uc_pos or "...", uc_err)
-			uc_errs[uc_err] = uc_errs[uc_err] and uc_errs[uc_err] + 1 or 1
-		end
-		n_mismatches = n_mismatches + 1
-	end
-
-	counter = counter + 1
-
-	-- Done.
-	if counter > 2^32 then
-		return true
+	if not love_ok and uc_ok then
+		error("utf8Tools.check passed a string that LÖVE rejected.")
 	end
 end
 
 
-function love.keypressed(kc, sc)
+local sc = string.char
 
-	if kc == "escape" then
-		love.event.quit()
+print("\n[OK] Empty string.")
+testString("")
 
-	elseif kc == "up" then
-		scroll_y = scroll_y + 256
+print("\n[OK] Nul byte string.")
+testString(sc(0x0))
 
-	elseif kc == "down" then
-		scroll_y = scroll_y - 256
+print("\n[OK] ASCII string.")
+testString("foobar")
 
-	elseif kc == "-" then
-		max_err_draw = math.max(1, max_err_draw - 1)
+print("\n[ERR] (0x80-0xbf) are continuation bytes.")
+testString(sc(0x80))
+testString(sc(0xbf))
 
-	elseif kc == "=" then
-		max_err_draw = math.min(10000, max_err_draw + 1)
-	end
-end
+print("\n[ERR] Invalid octets which should never appear in a UTF-8 string.")
+testString(sc(0xc0))
+testString(sc(0xc1))
+testString(sc(0xf5))
+testString(sc(0xf6))
+testString(sc(0xf7))
+testString(sc(0xf8))
+testString(sc(0xf9))
+testString(sc(0xfa))
+testString(sc(0xfb))
+testString(sc(0xfc))
+testString(sc(0xfd))
+testString(sc(0xfe))
+testString(sc(0xff))
 
+print("\n[OK] Multi-byte characters: ö, ㇱ, 𐅀")
+testString(sc(0xc3, 0xb6)) -- ö
+testString(sc(0xe3, 0x87, 0xb1)) -- "ㇱ"
+testString(sc(0xf0, 0x90, 0x85, 0x80)) -- "𐅀"
 
-function love.update(dt)
+print("\n[ERR] Multi-byte characters are too short.")
+testString(sc(0xc3))
+testString(sc(0xe3))
+testString(sc(0xe3, 0x87))
+testString(sc(0xf0))
+testString(sc(0xf0, 0x90))
+testString(sc(0xf0, 0x90, 0x85))
 
-	if not done then
-		for i = 1, 65536 do
-			if cycle() then
-				done = true
-				print("Complete. Total time: " .. love.timer.getTime() - time_start)
-				break
-			end
-		end
-	end
-end
+print("\n[ERR] Bad 'following' values in multi-byte slots.")
+testString(sc(0xc3, 0x79)) -- 2/2 low
+testString(sc(0xc3, 0xc2)) -- 2/2 high
 
+testString(sc(0xe3, 0x79, 0xb1)) -- 2/3 low
+testString(sc(0xe3, 0xc2, 0xb1)) -- 2/3 high
+testString(sc(0xe3, 0x87, 0x79)) -- 3/3 low
+testString(sc(0xe3, 0x87, 0xc2)) -- 3/3 high
 
-function love.draw()
+testString(sc(0xf0, 0x79, 0x85, 0x80)) -- 2/4 low
+testString(sc(0xf0, 0xc2, 0x85, 0x80)) -- 2/4 high
+testString(sc(0xf0, 0x90, 0x79, 0x80)) -- 3/4 low
+testString(sc(0xf0, 0x90, 0xc2, 0x80)) -- 3/4 high
+testString(sc(0xf0, 0x90, 0x85, 0x79)) -- 4/4 low
+testString(sc(0xf0, 0x90, 0x85, 0xc2)) -- 4/4 high
 
-	love.graphics.print("# Mismatches: " .. n_mismatches, 32, 32)
-	love.graphics.print("counter: " .. counter, 32, 64)
-	love.graphics.print("Error count: LÖVE: " .. n_love_err .. ", UC: " .. n_uc_err .. ", delta: " .. math.abs(n_love_err - n_uc_err), 32, 96)
+print("\n[ERR] Surrogate range values (0xd800 - 0xdfff).")
+testString("a" .. sc(0xed, 0xa0, 0x80) .. "b")
 
-	local draw_n = 0
+print("\n[ERR] Code point is too large.")
+testString(sc(0xf4, 0xbf, 0xbf, 0xbf))
 
-	local xx = 32
-	local yy = scroll_y + 128
-	for k, v in pairs(love_errs) do
-		draw_n = draw_n + 1
-		if draw_n > max_err_draw then
-			break
-		end
-		love.graphics.print(k .. ": " .. v, xx, yy)
-		yy = yy + 12
-	end
+print("\n[OK] String with mixed byte-length characters (a, ö, ㇱ, 𐅀).")
+testString("aöㇱ𐅀aaööㇱㇱ𐅀𐅀aaaöööㇱㇱㇱ𐅀𐅀𐅀")
 
-	xx = 400
-	yy = scroll_y + 128
-	draw_n = 0
-	for k, v in pairs(uc_errs) do
-		draw_n = draw_n + 1
-		if draw_n > max_err_draw then
-			break
-		end
-		love.graphics.print(k .. ": " .. v, xx, yy)
-		yy = yy + 12
-	end	
-end
+print("\nAll tests passed.\n")
 
+love.event.quit()

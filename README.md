@@ -1,4 +1,4 @@
-**Version:** 1.2.0. See CHANGELOG.md for API-breaking changes from 1.1.0.
+**Version:** 1.2.2.
 
 # utf8Tools
 
@@ -30,7 +30,7 @@ Searches for a UTF-8 start octet in a string. A properly encoded UTF-8 string is
 
 * `str`: The string to search.
 
-* `pos`: The first byte index to check.
+* `pos`: The first byte index to check. Can be from `1` to `#str + 1`.
 
 **Returns:** Index of the next starting octet, or `nil` if the end of the string is reached.
 
@@ -39,9 +39,13 @@ Searches for a UTF-8 start octet in a string. A properly encoded UTF-8 string is
 
 Checks a string for UTF-8 encoding problems and bad code point values.
 
-`local ok, err = utf8Tools.check(str)`
+`local ok, err = utf8Tools.check(str, [i], [j])`
 
 * `str`: The string to check.
+
+* `i`: *(1)* The first byte index.
+
+* `j`: *(#str)* The last byte index.
 
 **Returns:** `true` if no problems found. Otherwise, `false`, position, and error string.
 

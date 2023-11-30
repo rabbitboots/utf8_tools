@@ -1,5 +1,23 @@
 # utf8Tools Changelog
 
+# v1.2.2 (30 Nov 2023)
+
+* Changed `utf8Tools.step(str, pos)` to accept `pos` values that are one byte-index greater than `#str`.
+
+* Fixed `utf8Tools.check()` crashing on empty strings.
+
+* Rewrote the LÖVE test (`main.lua`), as it took significantly longer to complete in the dev version of LÖVE 12.0 than it did in 11.4. Instead of testing all combinations of 0-4 byte strings, it now just tests a few known good and bad strings.
+
+* Minor source code style changes. All hex literals (like `0xc0`) are now in lower case.
+
+
+# v1.2.1 (14 Nov 2023)
+
+* Added first, last byte index parameters to `utf8Check.check()`.
+
+* `_getCodePointFromString()`: removed an unnecessary call to `math.min()` within a call to `string.byte()`.
+
+
 # v1.2.0 (23 Sept 2023)
 
 **NOTE:** This is an API-breaking update.

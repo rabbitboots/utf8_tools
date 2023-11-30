@@ -6,7 +6,7 @@ local errTest = require(path .. "test.lib.err_test")
 local strict = require(path .. "test.lib.strict")
 
 
--- (This is only here because Lua 5.1 does not have the '\xFF' hex literal escapes for strings.)
+-- (This is only here because Lua 5.1 does not have the '\xff' hex literal escapes for strings.)
 hex = string.char
 
 
@@ -96,10 +96,10 @@ do
 	print(err)
 
 	print("\n[-] Arg #1 contains Nul as continuation byte (\\0)")
-	local ok_string  = "aaaa" .. hex(0xC3, 0x86) .. "aaaa" -- Æ
+	local ok_string  = "aaaa" .. hex(0xc3, 0x86) .. "aaaa" -- Æ
 	ok, ret = errTest.okErrExpectPass(utf8Tools.getUCString, ok_string, 5); print(ok, ret)
 
-	local bad_string = "aaaa" .. hex(0xC3, 0x0) .. "aaaa"
+	local bad_string = "aaaa" .. hex(0xc3, 0x0) .. "aaaa"
 	ok, ret = errTest.okErrExpectFail(utf8Tools.getUCString, bad_string, 5); print(ok, ret)
 
 	print("\n[+] Arg #1 acceptable use of Nul (\\0)")
@@ -107,7 +107,7 @@ do
 	ok, ret = errTest.okErrExpectPass(utf8Tools.getUCString, ok_nul, 5); print(ok, ret)
 
 	print("\n[-] Arg #1 contains surrogate range code points")
-	local surr = "a" .. hex(0xED, 0xA0, 0x80) .. "b"
+	local surr = "a" .. hex(0xed, 0xa0, 0x80) .. "b"
 	local ret1, ret2 = errTest.okErrExpectFail(utf8Tools.getUCString, surr, 2); print(i, ret1, ret2)
 end
 
@@ -125,7 +125,7 @@ do
 
 	print("\n[-] arg #2 out of bounds")
 	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 0)
-	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 2^53)
+	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", #"foobar" + 2)
 
 	print("\n[-] arg #2 not an integer")
 	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 0.5)
@@ -147,7 +147,7 @@ do
 	ok, ret = errTest.expectFail(utf8Tools.check, nil)
 
 	print("\n[ad hoc] expected behavior")
-	print(utf8Tools.check("goodgoodgoodgoodgoodb" .. hex(0xF0, 0x80, 0xE0) .. "d (should return true, 22)"))
+	print(utf8Tools.check("goodgoodgoodgoodgoodb" .. hex(0xf0, 0x80, 0xe0) .. "d (should return true, 22)"))
 	print(utf8Tools.check("Should return nil"))
 end
 
@@ -184,7 +184,7 @@ do
 	end
 
 	print("\n[ad hoc] Pass in bad data.")
-	local bad_point, bad_err = utf8Tools.ucStringToCodePoint(hex(0xF0, 0x80, 0xE0), 1)
+	local bad_point, bad_err = utf8Tools.ucStringToCodePoint(hex(0xf0, 0x80, 0xe0), 1)
 	print(bad_point, bad_err)
 end
 
