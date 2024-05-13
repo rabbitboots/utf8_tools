@@ -1,13 +1,14 @@
 local path = ... and (...):match("(.-)[^%.]+$") or ""
 
+local strict = require(path .. "test.lib.strict")
+
 local utf8Tools = require(path .. "utf8_tools")
 
 local errTest = require(path .. "test.lib.err_test")
-local strict = require(path .. "test.lib.strict")
 
 
 -- (This is only here because Lua 5.1 does not have the '\xff' hex literal escapes for strings.)
-hex = string.char
+local hex = string.char
 
 
 local samples = {
@@ -132,9 +133,13 @@ do
 
 	local test_str = "@Æㇹ𐅀"
 
-	for i = 1, #test_str do
-		print(i, utf8Tools.step(test_str, i))
-	end
+	print("\n[ad hoc] Step through this test string: " .. test_str)
+
+	local i = 1
+	repeat
+		print("utf8Tools.step()", i)
+		i = utf8Tools.step(test_str, i + 1)
+	until i > #test_str
 end
 
 

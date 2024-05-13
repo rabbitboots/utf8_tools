@@ -1,5 +1,29 @@
 # utf8Tools Changelog
 
+# v1.2.3 (13 May 2024)
+
+**NOTE:** This is an API-breaking update.
+
+* `utf8Tools.step()` used to return `nil` if 1) the string was empty, 2) the position was one past the end of the string, or 3) no start octet was found from the initial position through to the end. It will now return `#str + 1` in all of these cases. This change simplifies usage in *while* loops.
+
+* Added `utf8_conv.lua`, which provides a few supplemental text encoding conversion functions.
+  * `utf8Conv.latin1_utf8()`
+  * `utf8Conv.utf8_latin1()`
+  * `utf8Conv.utf16_utf8()`
+  * `utf8Conv.utf8_utf16()`
+
+* Added `test_conv.lua` to test *utf8Conv* functions.
+
+* Fixed an accidental global variable declaration in `text_utf8.lua`.
+
+* Fixed a documentation error in the example for `utf8Tools.step()`.
+
+
+## Upgrade Guide From v1.2.2 to v1.2.3
+
+* Check usage of `utf8Tools.step()`, as it no longer returns `nil` in cases where a start octet is not found.
+
+
 # v1.2.2 (30 Nov 2023)
 
 * Changed `utf8Tools.step(str, pos)` to accept `pos` values that are one byte-index greater than `#str`.

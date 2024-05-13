@@ -1,11 +1,11 @@
--- utf8Tools v1.2.2
+-- utf8Tools v1.2.3
 -- https://github.com/rabbitboots/utf8_tools
 
 
 --[[
 MIT License
 
-Copyright (c) 2022, 2023 RBTS
+Copyright (c) 2022 - 2024 RBTS
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,19 +24,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
---]]
-
-
---[[
-	References:
-	UTF-8 RFC 3629:
-	https://tools.ietf.org/html/rfc3629
-
-	Wikipedia page on UTF-8:
-	https://en.wikipedia.org/wiki/UTF-8
-
-	Wikipedia page on Unicode:
-	https://en.wikipedia.org/wiki/Unicode
 --]]
 
 
@@ -73,12 +60,13 @@ end
 local lut_oct_min_max = {{0x00000, 0x00007f}, {0x00080, 0x0007ff}, {0x00800, 0x00ffff}, {0x10000, 0x10ffff}}
 
 
-local function _assertArgType(arg_n, var, expected)
+function utf8Tools._assertArgType(arg_n, var, expected)
 
 	if type(var) ~= expected then
 		error("bad argument #" .. arg_n .. " (Expected " .. expected .. ", got " .. type(var) .. ")", 2)
 	end
 end
+local _assertArgType = utf8Tools._assertArgType
 
 
 local function errBadIntRange(arg_n, val, min, max)
@@ -278,7 +266,7 @@ function utf8Tools.step(str, pos)
 		pos = pos + 1
 	end
 
-	-- return nil
+	return #str + 1
 end
 
 
