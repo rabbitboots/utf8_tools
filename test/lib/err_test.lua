@@ -1,286 +1,322 @@
--- Prerelease -- 2022-03-17
-local path = ... and (...):match("(.-)[^%.]+$") or ""
+-- errTest2 v2.0.0 (prerelease)
+-- https://github.com/rabbitboots/err_test
 
-local errTest = {
-	_VERSION = "0.9.1", -- Prerelease, packaged with xmlToTable
-	--_URL = "n/a: pending initial release",
-	_DESCRIPTION = "A module for testing pcall-wrapped error calls in functions.",
-	_LICENSE = [[
-	Copyright (c) 2022 RBTS
+--[[
+MIT License
 
-	Permission is hereby granted, free of charge, to any person obtaining a copy
-	of this software and associated documentation files (the "Software"), to deal
-	in the Software without restriction, including without limitation the rights
-	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-	copies of the Software, and to permit persons to whom the Software is
-	furnished to do so, subject to the following conditions:
+Copyright (c) 2022 - 2024 RBTS
 
-	The above copyright notice and this permission notice shall be included in all
-	copies or substantial portions of the Software.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-	SOFTWARE.
-	]]
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+--]]
+
+
+local REQ_PATH = ... and (...):match("(.-)[^%.]+$") or ""
+
+
+local errTest = {}
+
+
+errTest.lang = {
+	assert_arg_bad_type = "argument #$1: bad type (expected $2, got $3)",
+	err_dupe_job = "attempt to run job twice.",
+	err_add_dupe_job = "tried to add a duplicate job function",
+	err_missing_func = "no job function at index $1",
+	fail_eq = "expected value equality",
+	fail_bool_false = "expected boolean false",
+	fail_bool_true = "expected boolean true",
+	fail_eval_false = "expected false evaluation (falsy)",
+	fail_eval_true = "expected true evaluation (truthy)",
+	fail_missing_nan = "expected NaN value",
+	fail_neq = "expected inequality",
+	fail_nil = "expected nil",
+	fail_not_nil = "expected not nil",
+	fail_unwanted_nan = "unwanted NaN value",
+	fail_type_check = "expected type $1, got $2",
+	fail_not_type_check = "expected not to receive type $1, got $2",
+	job_msg_post = "[$1]",
+	job_msg_pre = "($1/$2) $3: ",
+	msg_warn = "[warn]: $1",
+	res_fail = "fail",
+	res_pass = "pass",
+	test_begin = "<Begin test: $1>",
+	test_end = "<End test: $1>",
+	test_expect_pass = "[+] $1: $2 ($3): ",
+	test_expect_pass_failed = "Expected passing call failed:",
+	test_expect_fail = "[-] $1: $2 ($3): ",
+	test_expect_fail_passed = "Expected failing call passed:",
+	test_totals = "Passed: $1/$2, Warnings: $3",
 }
+local lang = errTest.lang
 
--- Config
 
--- Set to false to replace output of certain types as '<type>' instead of 'type: 0x012345678..'
--- Might help with diffing two results.
-errTest.type_hide = {
-	["function"] = false,
-	["table"] = false,
-	["thread"] = false,
-	["userdata"] = false,
-	["cdata"] = false,
-}
-
--- / Config
-
--- Internal State
-
--- Holds string labels for functions.
-local _registry = {}
-
--- / Internal State
-
--- Assertions
-
-local function _assertType(arg_n, var, allowed_types)
-	-- 'allowed_types' can be a single string or a table sequence of strings.
-	if type(allowed_types) == "table" then
-		for i, type_enum in ipairs(allowed_types) do
-			if type(var) == type_enum then
-				return
-			end
+local interp -- v v01
+do
+	local v, c = {}, function(t) for k in pairs(t) do t[k] = nil end end
+	interp = function(s, ...)
+		c(v)
+		for i = 1, select("#", ...) do
+			v[tostring(i)] = select(i, ...)
 		end
-		error("bad argument #" .. arg_n .. " (Expected (" .. table.concat(allowed_types, ", ") .. "), got " .. type(var) .. ")", 2)
-
-	elseif type(var) ~= allowed_types then
-		error("bad argument #" .. arg_n .. " (Expected " .. allowed_types .. ", got " .. type(var) .. ")", 2)
+		local r = s:gsub("%$(%d+)", v):gsub("%$;", "$")
+		c(v)
+		return r
 	end
 end
-local allowed_nil_str = {"nil", "string"}
 
--- / Assertions
 
--- Helpers
+local _mt_test = {}
+_mt_test.__index = _mt_test
 
-local function _try(func, ...)
-	return pcall(func, ...)
+
+local function _checkMultiType(val, list)
+	for w in list:gmatch("(%w+)") do
+		if type(val) == w then
+			return true
+		end
+	end
 end
 
 
-local function _okErrTry(func, ...)
-	return func(...)
+local function _assertArgType(arg_n, val, expected)
+	if not _checkMultiType(val, expected) then
+		error(interp(lang.assert_arg_bad_type, arg_n, expected, type(val)), 2)
+	end
 end
 
 
-local function _getLabel(func)
-	return _registry[func] or ""
-end
-
-
-local function _varargsToString(...)
-	-- (Track number of args so we can step over nil sequence gaps.)
+local function varargsToString(self, ...)
 	local n_args = select("#", ...)
 	if n_args == 0 then
 		return ""
 	end
 
-	local arguments_t = {...}
-
+	local temp = {...}
 	for i = 1, n_args do
-		local argument = arguments_t[i]
+		temp[i] = tostring(temp[i])
+	end
 
-		-- Optional address hiding
-		if errTest.type_hide[type(argument)] then
-			arguments_t[i] = "<" .. type(argument) .. ">"
+	return table.concat(temp, ", ")
+end
 
-		else
-			arguments_t[i] = tostring(argument)
+
+local function getLabel(self, func)
+	return self.reg[func] or ""
+end
+
+
+function errTest.new(name, verbosity)
+	_assertArgType(1, name, "nil/string")
+	_assertArgType(2, verbosity, "nil/number")
+
+	local self = {
+		name = name or "",
+		verbosity = verbosity or 4,
+
+		reg = {},
+		jobs = {},
+
+		counters = {
+			pass = 0,
+			warn = 0,
+		}
+	}
+
+	return setmetatable(self, _mt_test)
+end
+
+
+function _mt_test:registerFunction(label, func)
+	_assertArgType(1, label, "nil/string")
+	_assertArgType(2, func, "function")
+
+	self.reg[func] = label
+end
+
+
+function _mt_test:registerJob(desc, func)
+	_assertArgType(1, desc, "nil/string")
+	_assertArgType(2, func, "function")
+
+	for i, job in ipairs(self.jobs) do
+		if job[2] == func then
+			error(lang.err_add_dupe_job)
 		end
 	end
 
-	return table.concat(arguments_t, ", ")
+	table.insert(self.jobs, {desc or "", func})
 end
 
--- / Helpers
 
--- Public Interface
+function _mt_test:runJobs()
+	if self.verbosity >= 1 then
+		print(interp(lang.test_begin, self.name))
+	end
 
---- Associate a label string with a function (or remove it.) A function may have only one label at a time. Multiple identical labels across different functions is discouraged but may be used.
--- @param func The function to (un)register. Must not already have a label registered.
--- @param label The string ID to assign to this function. Pass nil to unregister the function.
--- @return The provided label string (to help with constructing print messages.)
-function errTest.register(func, label)
+	local dupes = {}
+	for i, job in ipairs(self.jobs) do
+		local desc, func = job[1], job[2]
 
-	_assertType(1, func, "function")
-	_assertType(2, label, allowed_nil_str)
-
-	if label then
-		if _registry[func] then
-			error("This function is already registered.")
+		if not func then
+			error(interp(lang.err_missing_func, i))
 		end
 
-	else
-		if not _registry[func] then
-			error("This function is not currently registered.")
+		if dupes[func] then
+			error(lang.err_dupe_job)
+		end
+		dupes[func] = true
+
+		if self.verbosity >= 2 then
+			io.write(interp(lang.job_msg_pre, i, #self.jobs, desc))
+			if self.verbosity >= 3 then
+				io.write("\n")
+			end
+		end
+
+		local counters = self.counters
+		local ok, err = pcall(func, self)
+
+		if ok then
+			counters.pass = counters.pass + 1
+		end
+
+		if self.verbosity >= 2 then
+			io.write(interp(lang.job_msg_post, lang.res_pass) .. "\t")
+			if not ok then
+				io.write(tostring(err) or "")
+			end
+			io.write("\n")
 		end
 	end
 
-	_registry[func] = label
-	
-	return label
-end
-
-
---- Unregister all functions.
--- @return Nothing.
-function errTest.unregisterAll()
-	for k in pairs(_registry) do
-		_registry[k] = nil
+	if self.verbosity >= 1 then
+		print(interp(lang.test_end, self.name))
+		local cnt = self.counters
+		print(interp(lang.test_totals, cnt.pass, #self.jobs, cnt.warn))
 	end
 end
 
 
---- Run a function via pcall(), and report if it was successful or not.
--- @param func The function to run.
--- @param ... Arguments for the function.
--- @return the first two results of the wrapped pcall (first is true on success run, false if not)
-function errTest.try(func, ...)
-
-	_assertType(1, func, "function")
-	io.write("(try) " .. _getLabel(func) .. "(" .. _varargsToString(...)  .. "): ")
-	io.flush()
-
-	local ok, res = _try(func, ...)
-
-	if ok then
-		io.write("[Pass]\n")
-
-	else
-		io.write("[Fail]\n" .. tostring(res) .. "\n")
-	end
-
-	return ok, res
+function _mt_test:allGood()
+	return self.counters.pass == #self.jobs
 end
 
 
---- Run a function via pcall(), raising an error if it does not complete successfully.
--- @param func The function to run.
--- @param ... Arguments for the function.
--- @return Nothing.
-function errTest.expectPass(func, ...)
+function _mt_test:print(level, ...)
+	if self.verbosity >= level then
+		print(...)
+	end
+end
 
-	_assertType(1, func, "function")
-	io.write("(expectPass) " .. _getLabel(func) .. "(" .. _varargsToString(...)  .. "): ")
-	io.flush()
-	
-	local ok, res = _try(func, ...)
+
+function _mt_test:write(level, str)
+	if self.verbosity >= level then
+		io.write(str)
+	end
+end
+
+
+function _mt_test:warn(str)
+	self.counters.warn = self.counters.warn + 1
+	if self.verbosity >= 2 then
+		print(interp(lang.msg_warn, tostring(str)))
+	end
+end
+
+
+function _mt_test:expectLuaReturn(desc, func, ...)
+	_assertArgType(1, desc, "nil/string")
+	_assertArgType(2, func, "function")
+
+	if self.verbosity >= 3 then
+		io.write(interp(lang.test_expect_pass, desc or "", getLabel(self, func), varargsToString(self, ...)))
+		io.flush()
+	end
+
+	local ok, res = pcall(func, ...)
 	if not ok then
-		error("Expected passing call failed:\n\t" .. tostring(res))
-
+		error(lang.test_expect_pass_failed .. "\n\t" .. tostring(res))
 	else
-		io.write("[Pass]\n")
+		io.write(lang.res_pass)
 	end
 
 	return ok, res
 end
 
 
---- Run a function via pcall(), raising an error if it does complete successfully.
--- @param func The function to run.
--- @param ... Arguments for the function.
--- @return Nothing.
-function errTest.expectFail(func, ...)
+function _mt_test:expectLuaError(desc, func, ...)
+	_assertArgType(1, desc, "nil/string")
+	_assertArgType(2, func, "function")
 
-	_assertType(1, func, "function")
-	io.write("(expectFail) " .. _getLabel(func) .. "(" .. _varargsToString(...)  .. "): ")
-	io.flush()
+	if self.verbosity >= 3 then
+		io.write(interp(lang.test_expect_fail, desc or "", getLabel(self, func), varargsToString(self, ...)))
+		io.flush()
+	end
 
-	local ok, res = _try(func, ...)
+	local ok, res = pcall(func, ...)
 	if ok == true then
-		error("Expected failing call passed:\n\t" .. tostring(res))
-
+		error(lang.test_expect_fail_passed .. "\n\t" .. tostring(res))
 	else
-		io.write("[Fail]\n-> " .. tostring(res) .. "\n")
+		if self.verbosity >= 3 then
+			io.write(lang.res_fail .. "\n")
+		end
+		self:print(4, "->" .. tostring(res))
 	end
 
 	return ok, res
 end
 
 
---- Run a function which normally returns false/nil plus an error string in the event of a failure, and report on whether it was successful or not. pcall() is not used.
--- @param func The function to run.
--- @param ... Arguments for the function.
--- @return true on success, false if the function returned false/nil.
-function errTest.okErrTry(func, ...)
+function _mt_test:isEqual(a, b) if a ~= b then error(lang.fail_eq, 2) else self:print(5, "isEqual()") end end
+function _mt_test:isNotEqual(a, b) if a == b then error(lang.fail_neq, 2) else self:print(5, "isNotEqual()") end end
 
-	_assertType(1, func, "function")
-	io.write("(okErrTry) " .. _getLabel(func) .. "(" .. _varargsToString(...)  .. "): ")
-	io.flush()
+function _mt_test:isBoolTrue(a) if a ~= true then error(lang.fail_bool_true, 2) else self:print(5, "isBoolTrue()") end end
+function _mt_test:isBoolFalse(a) if a ~= false then error(lang.fail_bool_false, 2) else self:print(5, "isBoolFalse()") end end
 
-	local ok, res = _okErrTry(func, ...)
-	if ok then
-		io.write("[Pass]\n")
+function _mt_test:isEvalTrue(a) if not a then error(lang.fail_eval_true, 2) else self:print(5, "isEvalTrue()") end end
+function _mt_test:isEvalFalse(a) if a then error(lang.fail_eval_false, 2) else self:print(5, "isEvalFalse()") end end
 
+function _mt_test:isNil(a) if a ~= nil then error(lang.fail_nil, 2) else self:print(5, "isNil()") end end
+function _mt_test:isNotNil(a) if a == nil then error(lang.fail_not_nil, 2) else self:print(5, "isNotNil()") end end
+
+function _mt_test:isNan(a) if a == a then error(lang.fail_missing_nan, 2) else self:print(5, "isNan()") end end
+function _mt_test:isNotNan(a) if a ~= a then error(lang.fail_unwanted_nan, 2) else self:print(5, "isNotNan()") end end
+
+
+function _mt_test:isType(val, expected)
+	_assertArgType(1, expected, "string")
+
+	if not _checkMultiType(val, expected) then
+		error(interp(lang.fail_type_check, expected, type(val)), 2)
 	else
-		io.write("[Fail]\n")
+		self:print(5, "isType", expected)
 	end
-	
-	return ok, res
 end
 
 
---- Run a function expected to return truthy (non-false, non-nil) as its first argument, and raise an error if it doesn't.
--- @param func The function to run.
--- @param ... Arguments for the function.
--- @return Nothing.
-function errTest.okErrExpectPass(func, ...)
-
-	_assertType(1, func, "function")
-	io.write("(okErrExpectPass) " .. _getLabel(func) .. "(" .. _varargsToString(...)  .. "): ")
-	io.flush()
-
-	local ok, res = _okErrTry(func, ...)
-	if not ok then
-		error("Expected passing call failed.")
-
+function _mt_test:isNotType(val, not_expected)
+	_assertArgType(1, not_expected, "string")
+	if _checkMultiType(val, not_expected) then
+		error(interp(lang.fail_not_type_check, not_expected, type(val)), 2)
 	else
-		io.write("[Pass]\n")
+		self:print(5, "isNotType", not_expected)
 	end
-
-	return ok, res
 end
 
-
---- Run a function expected to return false/nil as its first argument and an error string as its second, and raise an error if it doesn't.
--- @param func The function to run.
--- @param ... Arguments for the function.
--- @return Nothing.
-function errTest.okErrExpectFail(func, ...)
-
-	_assertType(1, func, "function")
-	io.write("(okErrExpectFail) " .. _getLabel(func) .. "(" .. _varargsToString(...)  .. "): ")
-	io.flush()
-
-	local ok, res = _okErrTry(func, ...)
-	if ok then
-		error("Expected failing call passed.")
-
-	else
-		io.write("[Fail]\n")
-	end
-
-	return ok, res
-end
-
--- / Public Interface
 
 return errTest

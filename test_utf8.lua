@@ -1,10 +1,11 @@
-local path = ... and (...):match("(.-)[^%.]+$") or ""
+local REQ_PATH = ... and (...):match("(.-)[^%.]+$") or ""
 
-local strict = require(path .. "test.lib.strict")
 
-local utf8Tools = require(path .. "utf8_tools")
+local strict = require(REQ_PATH .. "test.lib.strict")
 
-local errTest = require(path .. "test.lib.err_test")
+
+local errTest = require(REQ_PATH .. "test.lib.err_test")
+local utf8Tools = require(REQ_PATH .. "utf8_tools")
 
 
 -- (This is only here because Lua 5.1 does not have the '\xff' hex literal escapes for strings.)
@@ -49,174 +50,220 @@ local samples = {
 	{"𰀀", "U+30000"},
 }
 
-do
-	print("\nTest: " .. errTest.register(utf8Tools.getUCString, "utf8Tools.getUCString"))
 
-	local ok, res
-
-	print("\n[-] arg #1 bad type")
-	errTest.expectFail(utf8Tools.getUCString, nil, 1)
-
-	print("\n[-] arg #2 bad type")
-	errTest.expectFail(utf8Tools.getUCString, "foobar", false)
-
-	print("\n[ad hoc] expected behavior. Test at least one code point from every byte-length class.")
-	local test_str = "@Æㇹ𐅀"
-	local i = 1
-	while i < #test_str do
-		local ok, err = utf8Tools.getUCString(test_str, i)
-		if not ok then
-			error("expected passing getUCString() call failed: " .. err)
+local cli_verbosity
+for i = 0, #arg do
+	if arg[i] == "--verbosity" then
+		cli_verbosity = tonumber(arg[i + 1])
+		if not cli_verbosity then
+			error("invalid verbosity value")
 		end
-		print(ok)
-		i = i + #ok
 	end
-
-	print("\n[ad hoc] arg #2 misalignment (bad byte offset)")
-	local ok, err = utf8Tools.getUCString(test_str, 3)
-	if ok then
-		print(ok, err)
-		error("expected failing getUCString() call passed.")
-	end
-	print(err)
-
-	print("\n[ad hoc] arg #2 < 1")
-	local ok, err = utf8Tools.getUCString(test_str, 0)
-	if ok then
-		print(ok, err)
-		error("expected failing getUCString() call passed.")
-	end
-	print(err)
-
-	print("\n[ad hoc] arg #2 > #test_str")
-	local ok, err = utf8Tools.getUCString(test_str, #test_str + 1)
-	if ok then
-		print(ok, err)
-		error("expected failing getUCString() call passed.")
-	end
-	print(err)
-
-	print("\n[-] Arg #1 contains Nul as continuation byte (\\0)")
-	local ok_string  = "aaaa" .. hex(0xc3, 0x86) .. "aaaa" -- Æ
-	ok, ret = errTest.okErrExpectPass(utf8Tools.getUCString, ok_string, 5); print(ok, ret)
-
-	local bad_string = "aaaa" .. hex(0xc3, 0x0) .. "aaaa"
-	ok, ret = errTest.okErrExpectFail(utf8Tools.getUCString, bad_string, 5); print(ok, ret)
-
-	print("\n[+] Arg #1 acceptable use of Nul (\\0)")
-	local ok_nul = "aaaa\000aaaa"
-	ok, ret = errTest.okErrExpectPass(utf8Tools.getUCString, ok_nul, 5); print(ok, ret)
-
-	print("\n[-] Arg #1 contains surrogate range code points")
-	local surr = "a" .. hex(0xed, 0xa0, 0x80) .. "b"
-	local ret1, ret2 = errTest.okErrExpectFail(utf8Tools.getUCString, surr, 2); print(i, ret1, ret2)
 end
 
 
-do
-	print("\nTest: " .. errTest.register(utf8Tools.step, "utf8Tools.step"))
+local self = errTest.new("utf8Tools", cli_verbosity)
 
-	local ok, res
 
-	print("\n[-] arg #1 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.step, nil, 1)
-	
-	print("\n[-] arg #2 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", nil)
+-- [===[
+self:registerFunction("utf8Tools.getUCString", utf8Tools.getUCString)
 
-	print("\n[-] arg #2 out of bounds")
-	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 0)
-	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", #"foobar" + 2)
-
-	print("\n[-] arg #2 not an integer")
-	ok, ret = errTest.expectFail(utf8Tools.step, "foobar", 0.5)
+self:registerJob("utf8Tools.getUCString", function(self)
+	self:expectLuaError("arg #1 bad type", utf8Tools.getUCString, nil, 1)
+	self:expectLuaError("arg #2 bad type", utf8Tools.getUCString, "foobar", false)
 
 	local test_str = "@Æㇹ𐅀"
 
-	print("\n[ad hoc] Step through this test string: " .. test_str)
-
-	local i = 1
-	repeat
-		print("utf8Tools.step()", i)
-		i = utf8Tools.step(test_str, i + 1)
-	until i > #test_str
-end
-
-
-do
-	print("\nTest: " .. errTest.register(utf8Tools.check, "utf8Tools.check"))
-
-	local ok, res
-
-	print("\n[-] arg #1 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.check, nil)
-
-	print("\n[ad hoc] expected behavior")
-	print(utf8Tools.check("goodgoodgoodgoodgoodb" .. hex(0xf0, 0x80, 0xe0) .. "d (should return true, 22)"))
-	print(utf8Tools.check("Should return nil"))
-end
-
-do
-	print("\nTest: " .. errTest.register(utf8Tools.ucStringToCodePoint, "utf8Tools.ucStringToCodePoint"))
-
-	local ok, res
-
-	print("\n[-] arg #1 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, nil)
-
-	print("\n[-] arg #1 string too short")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "", 1)
-
-	print("\n[-] arg #2 bad type")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", false)
-
-	print("\n[-] arg #2 too low")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", 0)
-
-	print("\n[-] arg #2 too high")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", 99)
-
-	print("\n[-] arg #2 not an integer")
-	ok, ret = errTest.expectFail(utf8Tools.ucStringToCodePoint, "12345", 0.333)
-
-	print("\n[ad hoc] Expected behavior.")
-	local good_point = utf8Tools.ucStringToCodePoint("Æ", 1)
-	print("good_point", good_point)
-	local ok, err = utf8Tools.codePointToUCString(good_point)
-	print("ok, err", ok, err)
-	if err then
-		error("Expected passing ad hoc test failed")
+	do
+		self:print(2, "[+] Test at least one code point from every UTF-8 byte-length class.")
+		local i = 1
+		while i < #test_str do
+			local ok, err = utf8Tools.getUCString(test_str, i)
+			self:print(4, ok, err)
+			self:isEvalTrue(ok)
+			i = i + #ok
+		end
 	end
 
-	print("\n[ad hoc] Pass in bad data.")
-	local bad_point, bad_err = utf8Tools.ucStringToCodePoint(hex(0xf0, 0x80, 0xe0), 1)
-	print(bad_point, bad_err)
+	do
+		self:print(2, "[-] Test a bad byte offset.")
+		local ok, err = utf8Tools.getUCString(test_str, 3)
+		self:print(4, ok, err)
+		self:isEvalFalse(ok)
+	end
+
+	do
+		self:print(2, "[-] byte index is < 1")
+		local ok, err = utf8Tools.getUCString(test_str, 0)
+		self:print(4, ok, err)
+		self:isEvalFalse(ok)
+	end
+
+	do
+		self:print(2, "[-] byte index is > #test_str")
+		local ok, err = utf8Tools.getUCString(test_str, #test_str + 1)
+		self:print(4, ok, err)
+		self:isEvalFalse(ok)
+	end
+
+	do
+		self:print(2, "[-] input string contains Nul as continuation byte (\\0)")
+		local bad_string = "aaaa" .. hex(0xc3, 0x0) .. "aaaa" -- corrupted Æ. should be 0xc3, 0x86
+		local ok, err = utf8Tools.getUCString(bad_string, 5)
+		self:print(4, ok, err)
+		self:isEvalFalse(ok)
+	end
+
+	do
+		self:print(2, "[+] input string with an acceptable use of Nul (\\0)")
+		local ok_nul = "aaaa\000aaaa"
+		local ok, err = utf8Tools.getUCString(ok_nul, 5)
+		self:print(4, ok, err)
+		self:isEvalTrue(ok)
+	end
+
+	do
+		self:print(2, "[-] input string contains surrogate range code points")
+		local surr = "a" .. hex(0xed, 0xa0, 0x80) .. "b"
+		local ok, err = utf8Tools.getUCString(surr, 2)
+		self:print(4, ok, err)
+		self:isEvalFalse(ok)
+	end
 end
+)
+--]===]
 
 
-do
-	print("\nTest: " .. errTest.register(utf8Tools.codePointToUCString, "utf8Tools.codePointToUCString"))
+-- [===[
+self:registerFunction("utf8Tools.step", utf8Tools.step)
 
-	local ok, res
+self:registerJob("utf8Tools.step", function(self)
+	self:expectLuaError("arg #1 bad type", utf8Tools.step, nil, 1)
+	self:expectLuaError("arg #2 bad type", utf8Tools.step, "foobar", nil)
+	self:expectLuaError("arg #2 out of bounds (too low)", utf8Tools.step, "foobar", 0)
+	self:expectLuaError("arg #2 out of bounds (too high)", utf8Tools.step, "foobar", #"foobar" + 2)
+	self:expectLuaError("arg #2 not an integer", utf8Tools.step, "foobar", 0.5)
 
-	print("\n[-] arg #1 bad type")
-	ok, res = errTest.expectFail(utf8Tools.codePointToUCString, nil)
+	local test_str = "@Æㇹ𐅀"
 
-	print("\n[ad hoc]: invalid negative code point")
-	ok, res = utf8Tools.codePointToUCString(-11111)
-	print(ok, res)
+	do
+		self:print(2, "[+] Step through this test string: " .. test_str .. " (length: " .. #test_str .. ")")
+		local expected_i = {1, 2, 4, 7, 11}
 
-	print("\n[ad hoc]: overlarge code point")
-	ok, res = utf8Tools.codePointToUCString(2^32)
-	print(ok, res)
-	
-	print("\n[ad hoc] expected behavior")
-	print(utf8Tools.codePointToUCString(33)) -- !
-	print(utf8Tools.codePointToUCString(198)) -- Æ
-	print(utf8Tools.codePointToUCString(12793)) -- ㇹ
-
-	print("?", utf8Tools.codePointToUCString(0xfffd))
-	print("\n[ad hoc] arg #1 bad input: obscenely large number. What happens?")
-	print(utf8Tools.codePointToUCString(2^53))
+		local i, c = 1, 1
+		while true do
+			self:print(4, "utf8Tools.step()", i)
+			if i > #test_str then
+				break
+			end
+			self:isEqual(i, expected_i[c])
+			i = utf8Tools.step(test_str, i + 1)
+			c = c + 1
+		end
+	end
 end
+)
+--]===]
 
+
+-- [===[
+self:registerFunction("utf8Tools.check", utf8Tools.check)
+
+self:registerJob("utf8Tools.check", function(self)
+	self:expectLuaError("arg #1 bad type", utf8Tools.check, nil)
+
+	do
+		self:print(2, "[-] corrupt UTF-8 detection")
+		local ok, i, err = utf8Tools.check("goodgoodgoodgoodgoodb" .. hex(0xf0, 0x80, 0xe0) .. "d (should return true)")
+		self:print(4, "(should return false, 22, and some error message)")
+		self:print(4, ok, i, err)
+		self:isEvalFalse(ok)
+		self:isEqual(i, 22)
+	end
+
+	do
+		self:print(2, "[+] good UTF-8 detection")
+		local ok, i, err = utf8Tools.check("!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀")
+		self:print(4, ok, i, err)
+		self:isEvalTrue(ok)
+	end
+end
+)
+--]===]
+
+
+-- [===[
+self:registerFunction("utf8Tools.ucStringToCodePoint", utf8Tools.ucStringToCodePoint)
+
+self:registerJob("utf8Tools.ucStringToCodePoint", function(self)
+	self:expectLuaError("arg #1 bad type", utf8Tools.ucStringToCodePoint, nil)
+	self:expectLuaError("arg #1 string too short", utf8Tools.ucStringToCodePoint, "", 1)
+	self:expectLuaError("arg #2 bad type", utf8Tools.ucStringToCodePoint, "12345", false)
+	self:expectLuaError("arg #2 too low", utf8Tools.ucStringToCodePoint, "12345", 0)
+	self:expectLuaError("arg #2 too high", utf8Tools.ucStringToCodePoint, "12345", 99)
+	self:expectLuaError("arg #2 not an integer", utf8Tools.ucStringToCodePoint, "12345", 0.333)
+
+	do
+		self:print(2, "[+] Expected behavior.")
+		local good_point = utf8Tools.ucStringToCodePoint("Æ", 1)
+		self:print(4, good_point)
+		local ok, err = utf8Tools.codePointToUCString(good_point)
+		self:print(4, ok, err)
+		self:isEvalTrue(ok)
+	end
+
+	do
+		self:print(2, "[-] Pass in bad data.")
+		local bad_point, bad_err = utf8Tools.ucStringToCodePoint(hex(0xf0, 0x80, 0xe0), 1)
+		self:print(4, bad_point, bad_err)
+		self:isEvalFalse(bad_point)
+	end
+end
+)
+--]===]
+
+
+-- [===[
+self:registerFunction("utf8Tools.codePointToUCString", utf8Tools.codePointToUCString)
+
+self:registerJob("utf8Tools.codePointToUCString", function(self)
+	self:expectLuaError("arg #1 bad type", utf8Tools.codePointToUCString, nil)
+
+	do
+		self:print(2, "[-] invalid negative code point")
+		local ok, res = utf8Tools.codePointToUCString(-11111)
+		self:print(4, ok, res)
+		self:isEvalFalse(ok)
+	end
+
+	do
+		self:print(2, "[-] overlarge code point")
+		local ok, res = utf8Tools.codePointToUCString(2^32)
+		self:print(4, ok, res)
+		self:isEvalFalse(ok)
+	end
+
+	do
+		self:print(2, "[+] expected behavior")
+		local ch
+		ch = utf8Tools.codePointToUCString(33)
+		self:print(4, ch)
+		self:isEqual(ch, "!")
+
+		ch = utf8Tools.codePointToUCString(198)
+		self:print(4, ch)
+		self:isEqual(ch, "Æ")
+
+		ch = utf8Tools.codePointToUCString(12793)
+		self:print(4, ch)
+		self:isEqual(ch, "ㇹ")
+	end
+end
+)
+--]===]
+
+
+self:runJobs()
+
+
+return self:allGood() and 0 or -1
