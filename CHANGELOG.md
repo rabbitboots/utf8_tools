@@ -1,5 +1,30 @@
 # utf8Tools Changelog
 
+# v1.3.0 (3 July 2024)
+
+**NOTE:** This is an API-breaking update.
+
+* Changed `utf8Tools.step()`:
+  * The byte position is advanced internally, rather than needing the caller to advance it as part of the arguments.
+  * Returns `nil` if a Start Byte is not found.
+  * Altered the range for `i` from `1 - #str + 1` to `0 - #str`.
+* Added `utf8Tools.stepBack()`.
+* Changed the order of return values for failed calls to `utf8Tools.check()`, `utf8Conv.utf8_latin1()`, `utf8Conv.utf16_utf8()` and `utf8Conv.utf8_utf16()` to work better with Lua's `assert()` function:
+  * Before: `nil`, byte position, error string
+  * After: `nil`, error string, byte position
+* Changed how `utf8Tools.check()` handles byte ranges:
+  * If the input string is empty, then `i` and `j` must be zero. The defaults for this case are `i==0` and `j==0`.
+  * If the input string is *not* empty, then `i` must be between 1 and `#str`, and `j` must be between `i` and `#str`. The defaults for this case are `i==1` and `j==#str`.
+* On success, `utf8Tools.check()` now returns the number of code points scanned instead of `true`.
+* Merged `utf8Tools.ucStringToCodePoint()` and `utf8Tools.getUCString()` into one function, `utf8Tools.codeFromString()`, which provides both a code point number and the UTF-8 substring of the code point, or `nil` + error message upon failure.
+* Renamed `utf8Tools.codePointToUCString()` to `utf8Tools.stringFromCode()`.
+* Removed option `exclude_invalid_octets` and the table `utf8Tools.lut_invalid_octet`. This option was supposed to check for bytes which are invalid in UTF-8 encoded text: `0xc0`, `0xc1`, `0xf5 - 0xff`. Testing found that these bytes are already caught by existing checks.
+* Added `utf8Tools.codes()` (a loop iterator).
+* Added `utf8Tools.concatCodes()`.
+* Shortened variable names, especially those for common internal strings and iterators.
+* Replaced usage of *octet* with *byte* throughout the codebase and documentation.
+
+
 # v1.2.3 (20 May 2024)
 
 **NOTE:** This is an API-breaking update.

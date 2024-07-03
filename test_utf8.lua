@@ -1,15 +1,24 @@
-local REQ_PATH = ... and (...):match("(.-)[^%.]+$") or ""
+local PATH = ... and (...):match("(.-)[^%.]+$") or ""
 
 
-local strict = require(REQ_PATH .. "test.lib.strict")
+local strict = require(PATH .. "test.lib.strict")
 
 
-local errTest = require(REQ_PATH .. "test.lib.err_test")
-local utf8Tools = require(REQ_PATH .. "utf8_tools")
+local errTest = require(PATH .. "test.lib.err_test")
+local utf8Tools = require(PATH .. "utf8_tools")
+
+
+local function resetOpts()
+	utf8Tools.options.check_surrogates = true
+end
 
 
 -- (This is only here because Lua 5.1 does not have the '\xff' hex literal escapes for strings.)
 local hex = string.char
+
+
+local surr_0xd800 = hex(0xed, 0xa0, 0x80)
+local str_invalid_byte = hex(0xc0)
 
 
 local samples = {
@@ -65,69 +74,123 @@ end
 local self = errTest.new("utf8Tools", cli_verbosity)
 
 
--- [===[
-self:registerFunction("utf8Tools.getUCString", utf8Tools.getUCString)
+--[[
+Functions affected by options:
 
-self:registerJob("utf8Tools.getUCString", function(self)
-	self:expectLuaError("arg #1 bad type", utf8Tools.getUCString, nil, 1)
-	self:expectLuaError("arg #2 bad type", utf8Tools.getUCString, "foobar", false)
+| Function                   | check_surrogates |
++----------------------------+------------------+
+| utf8Tools.check()          | Yes              |
+| utf8Tools.codeFromString() | Yes              |
+| utf8Tools.codes()          | Yes              |
+| utf8Tools.concatCodes()    | Yes              |
+| utf8Tools.reverse()        | Yes              |
+| utf8Tools.step()           | No               |
+| utf8Tools.stringFromCode() | Yes              |
+--]]
+
+
+-- [===[
+self:registerFunction("utf8Tools.codeFromString", utf8Tools.codeFromString)
+
+self:registerJob("utf8Tools.codeFromString", function(self)
+	resetOpts()
+
+	self:expectLuaError("arg #1 bad type", utf8Tools.codeFromString, nil, 1)
+	self:expectLuaError("arg #1 string too short", utf8Tools.codeFromString, "", 1)
+
+	self:expectLuaError("arg #2 bad type", utf8Tools.codeFromString, "foobar", false)
+	self:expectLuaError("arg #2 too low", utf8Tools.codeFromString, "12345", 0)
+	self:expectLuaError("arg #2 too high", utf8Tools.codeFromString, "12345", 99)
+	self:expectLuaError("arg #2 not an integer", utf8Tools.codeFromString, "12345", 0.333)
 
 	local test_str = "@Æㇹ𐅀"
 
 	do
-		self:print(2, "[+] Test at least one code point from every UTF-8 byte-length class.")
+		self:print(3, "[+] Test at least one code point from every UTF-8 byte-length class.")
 		local i = 1
-		while i < #test_str do
-			local ok, err = utf8Tools.getUCString(test_str, i)
-			self:print(4, ok, err)
-			self:isEvalTrue(ok)
-			i = i + #ok
-		end
+		local code, u8_str
+
+		code, u8_str = utf8Tools.codeFromString(test_str, i)
+		self:print(4, code, u8_str)
+		self:isEqual(code, 0x40)
+		self:isEqual(u8_str, "@")
+		i = i + #u8_str
+		self:lf(4)
+
+		code, u8_str = utf8Tools.codeFromString(test_str, i)
+		self:print(4, code, u8_str)
+		self:isEqual(code, 0xc6)
+		self:isEqual(u8_str, "Æ")
+		i = i + #u8_str
+		self:lf(4)
+
+		code, u8_str = utf8Tools.codeFromString(test_str, i)
+		self:print(4, code, u8_str)
+		self:isEqual(code, 0x31f9)
+		self:isEqual(u8_str, "ㇹ")
+		i = i + #u8_str
+		self:lf(4)
+
+		code, u8_str = utf8Tools.codeFromString(test_str, i)
+		self:print(4, code, u8_str)
+		self:isEqual(code, 0x10140)
+		self:isEqual(u8_str, "𐅀")
+		i = i + #u8_str
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[-] Test a bad byte offset.")
-		local ok, err = utf8Tools.getUCString(test_str, 3)
-		self:print(4, ok, err)
-		self:isEvalFalse(ok)
+		self:print(3, "[-] Pass in bad data.")
+		local code, u8_str = utf8Tools.codeFromString(hex(0xf0, 0x80, 0xe0), 1)
+		self:print(4, code, u8_str)
+		self:isEvalFalse(code)
+		self:lf(4)
+	end
+
+
+	do
+		self:print(3, "[-] Test a bad byte offset.")
+		local code, u8_str = utf8Tools.codeFromString(test_str, 3)
+		self:print(4, code, u8_str)
+		self:isEvalFalse(code)
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[-] byte index is < 1")
-		local ok, err = utf8Tools.getUCString(test_str, 0)
-		self:print(4, ok, err)
-		self:isEvalFalse(ok)
-	end
-
-	do
-		self:print(2, "[-] byte index is > #test_str")
-		local ok, err = utf8Tools.getUCString(test_str, #test_str + 1)
-		self:print(4, ok, err)
-		self:isEvalFalse(ok)
-	end
-
-	do
-		self:print(2, "[-] input string contains Nul as continuation byte (\\0)")
+		self:print(3, "[-] input string contains Nul as continuation byte (\\0)")
 		local bad_string = "aaaa" .. hex(0xc3, 0x0) .. "aaaa" -- corrupted Æ. should be 0xc3, 0x86
-		local ok, err = utf8Tools.getUCString(bad_string, 5)
-		self:print(4, ok, err)
-		self:isEvalFalse(ok)
+		local code, u8_str = utf8Tools.codeFromString(bad_string, 5)
+		self:print(4, code, u8_str)
+		self:isEvalFalse(code)
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[+] input string with an acceptable use of Nul (\\0)")
+		self:print(3, "[+] input string with an acceptable use of Nul (\\0)")
 		local ok_nul = "aaaa\000aaaa"
-		local ok, err = utf8Tools.getUCString(ok_nul, 5)
-		self:print(4, ok, err)
-		self:isEvalTrue(ok)
+		local code, u8_str = utf8Tools.codeFromString(ok_nul, 5)
+		self:print(4, code, u8_str)
+		self:isEqual(code, 0)
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[-] input string contains surrogate range code points")
-		local surr = "a" .. hex(0xed, 0xa0, 0x80) .. "b"
-		local ok, err = utf8Tools.getUCString(surr, 2)
-		self:print(4, ok, err)
-		self:isEvalFalse(ok)
+		self:print(3, "[-] invalid surrogate pair")
+		resetOpts()
+		local code, u8_str = utf8Tools.codeFromString(surr_0xd800)
+		self:print(4, code, u8_str)
+		self:isEvalFalse(code)
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] with 'check_surrogates' disabled")
+		utf8Tools.options.check_surrogates = false
+		local code, u8_str = utf8Tools.codeFromString(surr_0xd800)
+		self:print(4, code, u8_str)
+		self:isEvalTrue(code)
+		resetOpts()
+		self:lf(4)
 	end
 end
 )
@@ -138,54 +201,137 @@ end
 self:registerFunction("utf8Tools.step", utf8Tools.step)
 
 self:registerJob("utf8Tools.step", function(self)
+	resetOpts()
+
 	self:expectLuaError("arg #1 bad type", utf8Tools.step, nil, 1)
+
 	self:expectLuaError("arg #2 bad type", utf8Tools.step, "foobar", nil)
-	self:expectLuaError("arg #2 out of bounds (too low)", utf8Tools.step, "foobar", 0)
-	self:expectLuaError("arg #2 out of bounds (too high)", utf8Tools.step, "foobar", #"foobar" + 2)
+	self:expectLuaError("arg #2 out of bounds (too low)", utf8Tools.step, "foobar", -1)
+	self:expectLuaError("arg #2 out of bounds (too high)", utf8Tools.step, "foobar", #"foobar" + 1)
 	self:expectLuaError("arg #2 not an integer", utf8Tools.step, "foobar", 0.5)
 
 	local test_str = "@Æㇹ𐅀"
 
 	do
-		self:print(2, "[+] Step through this test string: " .. test_str .. " (length: " .. #test_str .. ")")
-		local expected_i = {1, 2, 4, 7, 11}
+		self:print(3, "[+] Step forward through this test string: " .. test_str .. " (length: " .. #test_str .. ")")
+		local expected_i = {1, 2, 4, 7}
 
-		local i, c = 1, 1
-		while true do
+		local i, c = 0, 0
+		while i do
 			self:print(4, "utf8Tools.step()", i)
-			if i > #test_str then
-				break
-			end
-			self:isEqual(i, expected_i[c])
-			i = utf8Tools.step(test_str, i + 1)
+			i = utf8Tools.step(test_str, i)
 			c = c + 1
+			self:isEqual(i, expected_i[c])
 		end
+		self:lf(4)
 	end
 end
 )
---]===]
+
+
+-- [===[
+self:registerFunction("utf8Tools.stepBack", utf8Tools.stepBack)
+
+self:registerJob("utf8Tools.stepBack", function(self)
+	resetOpts()
+
+	self:expectLuaError("arg #1 bad type", utf8Tools.stepBack, nil, 1)
+
+	self:expectLuaError("arg #2 bad type", utf8Tools.stepBack, "foobar", nil)
+	self:expectLuaError("arg #2 out of bounds (too low)", utf8Tools.stepBack, "foobar", 0)
+	self:expectLuaError("arg #2 out of bounds (too high)", utf8Tools.stepBack, "foobar", #"foobar" + 2)
+	self:expectLuaError("arg #2 not an integer", utf8Tools.stepBack, "foobar", 0.5)
+
+	local test_str = "@Æㇹ𐅀"
+
+	do
+		self:print(3, "[+] Step backwards through this test string: " .. test_str .. " (length: " .. #test_str .. ")")
+		local expected_i = {1, 2, 4, 7}
+
+		local i, c = #test_str + 1, #expected_i + 1
+		while i do
+			self:print(4, "utf8Tools.stepBack()", i)
+			i = utf8Tools.stepBack(test_str, i)
+			c = c - 1
+			self:isEqual(i, expected_i[c])
+		end
+		self:lf(4)
+	end
+end
+)
 
 
 -- [===[
 self:registerFunction("utf8Tools.check", utf8Tools.check)
 
 self:registerJob("utf8Tools.check", function(self)
+	resetOpts()
+
 	self:expectLuaError("arg #1 bad type", utf8Tools.check, nil)
 
+	self:expectLuaError("arg #2 bad type", utf8Tools.check, "foobar", {})
+	self:expectLuaError("arg #2 not an integer", utf8Tools.check, "foobar", 1.1)
+	self:expectLuaError("arg #2 too low", utf8Tools.check, "foobar", -1)
+	self:expectLuaError("arg #2 too high", utf8Tools.check, "foobar", 10000)
+
+	self:expectLuaError("arg #3 bad type", utf8Tools.check, "foobar", 1, {})
+	self:expectLuaError("arg #3 not an integer", utf8Tools.check, "foobar", 1, 2.2)
+	self:expectLuaError("arg #3 too low (lower than #2)", utf8Tools.check, "foobar", 3, 1)
+	self:expectLuaError("arg #3 too high", utf8Tools.check, "foobar", 3, 10000)
+
 	do
-		self:print(2, "[-] corrupt UTF-8 detection")
-		local ok, i, err = utf8Tools.check("goodgoodgoodgoodgoodb" .. hex(0xf0, 0x80, 0xe0) .. "d (should return true)")
-		self:print(4, "(should return false, 22, and some error message)")
-		self:print(4, ok, i, err)
-		self:isEvalFalse(ok)
+		self:print(3, "[-] corrupt UTF-8 detection")
+		local n_codes, err, i = utf8Tools.check("goodgoodgoodgoodgoodb" .. hex(0xf0, 0x80, 0xe0) .. "d")
+		self:print(4, "(should return nil, 22, and some error message)")
+		self:print(4, n_codes, i, err)
+		self:isEvalFalse(n_codes)
 		self:isEqual(i, 22)
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[+] good UTF-8 detection")
-		local ok, i, err = utf8Tools.check("!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀")
-		self:print(4, ok, i, err)
-		self:isEvalTrue(ok)
+		self:print(3, "[+] good UTF-8 detection")
+		local n_codes, err, i = utf8Tools.check("!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀")
+		self:print(4, n_codes, i, err)
+		self:isEqual(n_codes, 16) -- 16 code points
+		self:lf(4)
+
+	end
+
+	do
+		self:print(3, "[+] good UTF-8 detection of a substring")
+		local n_codes, err, i = utf8Tools.check("!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀", 2, 3) -- "@~"
+		self:print(4, n_codes, i, err)
+		self:isEqual(n_codes, 2) -- 2 code points
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[-] invalid surrogate pair")
+		resetOpts()
+		local n_codes, err, i = utf8Tools.check("foo" .. surr_0xd800 .. "bar")
+		self:print(4, n_codes, i, err)
+		self:isEvalFalse(n_codes)
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] with 'check_surrogates' disabled")
+		resetOpts()
+		utf8Tools.options.check_surrogates = false
+		local n_codes, err, i = utf8Tools.check("foo" .. surr_0xd800 .. "bar")
+		self:print(4, n_codes, i, err)
+		self:isEqual(n_codes, 7)
+		resetOpts()
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[-] invalid UTF-8 byte")
+		local n_codes, err, i = utf8Tools.check("foo" .. str_invalid_byte .. "bar")
+		self:print(4, n_codes, i, err)
+		self:isEvalFalse(n_codes)
+		self:lf(4)
 	end
 end
 )
@@ -193,30 +339,57 @@ end
 
 
 -- [===[
-self:registerFunction("utf8Tools.ucStringToCodePoint", utf8Tools.ucStringToCodePoint)
+self:registerFunction("utf8Tools.scrub", utf8Tools.scrub)
 
-self:registerJob("utf8Tools.ucStringToCodePoint", function(self)
-	self:expectLuaError("arg #1 bad type", utf8Tools.ucStringToCodePoint, nil)
-	self:expectLuaError("arg #1 string too short", utf8Tools.ucStringToCodePoint, "", 1)
-	self:expectLuaError("arg #2 bad type", utf8Tools.ucStringToCodePoint, "12345", false)
-	self:expectLuaError("arg #2 too low", utf8Tools.ucStringToCodePoint, "12345", 0)
-	self:expectLuaError("arg #2 too high", utf8Tools.ucStringToCodePoint, "12345", 99)
-	self:expectLuaError("arg #2 not an integer", utf8Tools.ucStringToCodePoint, "12345", 0.333)
+self:registerJob("utf8Tools.scrub", function(self)
+	resetOpts()
+
+	self:expectLuaError("arg #1 bad type", utf8Tools.scrub, nil, "x")
+	self:expectLuaError("arg #2 bad type", utf8Tools.scrub, "foo", nil)
 
 	do
-		self:print(2, "[+] Expected behavior.")
-		local good_point = utf8Tools.ucStringToCodePoint("Æ", 1)
-		self:print(4, good_point)
-		local ok, err = utf8Tools.codePointToUCString(good_point)
-		self:print(4, ok, err)
-		self:isEvalTrue(ok)
+		self:print(3, "[+] Good input, nothing to scrub")
+		local good_str = "The good string."
+		local str = utf8Tools.scrub(good_str, "x")
+		self:isEqual(str, good_str)
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[-] Pass in bad data.")
-		local bad_point, bad_err = utf8Tools.ucStringToCodePoint(hex(0xf0, 0x80, 0xe0), 1)
-		self:print(4, bad_point, bad_err)
-		self:isEvalFalse(bad_point)
+		self:print(3, "[+] Malformed input, replace invalid bytes")
+		local bad_str = "The b" .. hex(0xff, 0xff, 0xff) .. "d string."
+		local str = utf8Tools.scrub(bad_str, "x")
+		self:isEqual(str, "The bxd string.")
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] Malformed input, delete invalid bytes")
+		local bad_str = "The b" .. hex(0xff, 0xff, 0xff) .. "d string."
+		local str = utf8Tools.scrub(bad_str, "")
+		self:isEqual(str, "The bd string.")
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] Input with surrogate pair; replace")
+		resetOpts()
+		local surr_str = "abc" .. surr_0xd800 .. "def"
+		local str = utf8Tools.scrub(surr_str, "_")
+		self:isEqual(str, "abc_def")
+		resetOpts()
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] Input with surrogate pair: ignore")
+		resetOpts()
+		utf8Tools.options.check_surrogates = false
+		local surr_str = "abc" .. surr_0xd800 .. "def"
+		local str = utf8Tools.scrub(surr_str, "_")
+		self:isEqual(str, surr_str)
+		resetOpts()
+		self:lf(4)
 	end
 end
 )
@@ -224,40 +397,135 @@ end
 
 
 -- [===[
-self:registerFunction("utf8Tools.codePointToUCString", utf8Tools.codePointToUCString)
+self:registerFunction("utf8Tools.stringFromCode()", utf8Tools.stringFromCode)
 
-self:registerJob("utf8Tools.codePointToUCString", function(self)
-	self:expectLuaError("arg #1 bad type", utf8Tools.codePointToUCString, nil)
+self:registerJob("utf8Tools.stringFromCode", function(self)
+	resetOpts()
+
+	self:expectLuaError("arg #1 bad type", utf8Tools.stringFromCode, nil)
 
 	do
-		self:print(2, "[-] invalid negative code point")
-		local ok, res = utf8Tools.codePointToUCString(-11111)
-		self:print(4, ok, res)
-		self:isEvalFalse(ok)
+		self:print(3, "[-] invalid negative code point")
+		local u8_str, err = utf8Tools.stringFromCode(-11111)
+		self:print(4, u8_str, err)
+		self:isEvalFalse(u8_str)
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[-] overlarge code point")
-		local ok, res = utf8Tools.codePointToUCString(2^32)
-		self:print(4, ok, res)
-		self:isEvalFalse(ok)
+		self:print(3, "[-] overlarge code point")
+		local u8_str, err = utf8Tools.stringFromCode(2^32)
+		self:print(4, u8_str, err)
+		self:isEvalFalse(u8_str)
+		self:lf(4)
 	end
 
 	do
-		self:print(2, "[+] expected behavior")
-		local ch
-		ch = utf8Tools.codePointToUCString(33)
-		self:print(4, ch)
-		self:isEqual(ch, "!")
+		self:print(3, "[+] expected behavior")
+		local u8_str, err
+		u8_str, err = utf8Tools.stringFromCode(33)
+		self:print(4, u8_str, err)
+		self:isEqual(u8_str, "!")
+		self:lf(4)
 
-		ch = utf8Tools.codePointToUCString(198)
-		self:print(4, ch)
-		self:isEqual(ch, "Æ")
+		u8_str, err = utf8Tools.stringFromCode(198)
+		self:print(4, u8_str, err)
+		self:isEqual(u8_str, "Æ")
+		self:lf(4)
 
-		ch = utf8Tools.codePointToUCString(12793)
-		self:print(4, ch)
-		self:isEqual(ch, "ㇹ")
+		u8_str, err = utf8Tools.stringFromCode(12793)
+		self:print(4, u8_str, err)
+		self:isEqual(u8_str, "ㇹ")
+		self:lf(4)
 	end
+
+	do
+		self:print(3, "[-] invalid surrogate pair")
+		resetOpts()
+		local u8_str, err = utf8Tools.stringFromCode(0xd800)
+		self:print(4, u8_str, err)
+		self:isEvalFalse(u8_str)
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] with 'check_surrogates' disabled")
+		resetOpts()
+		utf8Tools.options.check_surrogates = false
+		local u8_str, err = utf8Tools.stringFromCode(0xd800)
+		self:print(4, u8_str, err)
+		self:isEvalTrue(u8_str)
+		resetOpts()
+		self:lf(4)
+	end
+end
+)
+--]===]
+
+
+-- [===[
+self:registerFunction("utf8Tools.codes() (iterator)", utf8Tools.codes)
+
+self:registerJob("utf8Tools.codes", function(self)
+	resetOpts()
+
+	local func = function(s)
+		for i, c, u in utf8Tools.codes(s) do
+			self:print(4, "i,c,u", i, c, u)
+		end
+	end
+	local bad_string = "aaaa" .. hex(0xc3, 0x0) .. "aaaa" -- corrupted Æ. should be 0xc3, 0x86
+	local good_string = "!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀"
+
+	self:expectLuaError("arg #1 bad type", func, {})
+	self:expectLuaError("arg #1 invalid encoding", func, bad_string)
+	self:expectLuaReturn("arg #1 expected behavior", func, "!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀")
+
+	resetOpts()
+	self:expectLuaError("surrogate byte (excluded)", func, "foo" .. surr_0xd800 .. "bar")
+
+	utf8Tools.options.check_surrogates = false
+	self:expectLuaReturn("surrogate byte (allowed)", func, "foo" .. surr_0xd800 .. "bar")
+	resetOpts()
+end
+)
+--]===]
+
+
+-- [===[
+self:registerFunction("utf8Tools.concatCodes()", utf8Tools.concatCodes)
+
+self:registerJob("utf8Tools.concatCodes", function(self)
+	resetOpts()
+
+	self:expectLuaError("bad type in args", utf8Tools.concatCodes, 0x40, {}, 0x40)
+	self:expectLuaError("invalid code point (too big) in args", utf8Tools.concatCodes, 0x40, 2^30, 0x40)
+	self:expectLuaError("invalid code point (negative) in args", utf8Tools.concatCodes, 0x40, -33, 0x40)
+
+	self:expectLuaReturn("no args, no problem (makes an empty string)", utf8Tools.concatCodes)
+
+	do
+		self:print(3, "[+] expected behavior")
+		local good_string = "!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀"
+		local str = utf8Tools.concatCodes(
+			0x21, 0x40, 0x7e, 0xa1, 0xc6, 0xf8,
+			0x17f, 0x31f1, 0x31f9, 0x3205, 0xa832,
+			0xa839, 0x10140, 0x10141, 0x10145, 0x30000
+		)
+		self:print(4, str, #str)
+		self:print(4, good_string, #good_string)
+		self:print(4, str == good_string)
+		self:isEqual(str, good_string)
+		self:lf(4)
+	end
+
+	resetOpts()
+	self:expectLuaError("surrogate byte (excluded)", utf8Tools.concatCodes, 0x40, 0xd800, 0x40)
+
+	utf8Tools.options.check_surrogates = false
+	self:expectLuaReturn("surrogate byte (allowed)", utf8Tools.concatCodes, 0x40, 0xd800, 0x40)
+	resetOpts()
+	self:lf(4)
 end
 )
 --]===]
@@ -265,5 +533,3 @@ end
 
 self:runJobs()
 
-
-return self:allGood() and 0 or -1

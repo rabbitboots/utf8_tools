@@ -1,4 +1,4 @@
--- errTest2 v2.0.0 (prerelease)
+-- errTest v2.1.0
 -- https://github.com/rabbitboots/err_test
 
 --[[
@@ -26,9 +26,6 @@ SOFTWARE.
 --]]
 
 
-local REQ_PATH = ... and (...):match("(.-)[^%.]+$") or ""
-
-
 local errTest = {}
 
 
@@ -49,31 +46,28 @@ errTest.lang = {
 	fail_unwanted_nan = "unwanted NaN value",
 	fail_type_check = "expected type $1, got $2",
 	fail_not_type_check = "expected not to receive type $1, got $2",
-	job_msg_post = "[$1]",
-	job_msg_pre = "($1/$2) $3: ",
+	job_msg_pre = "($1/$2) $3",
 	msg_warn = "[warn]: $1",
-	res_fail = "fail",
-	res_pass = "pass",
-	test_begin = "<Begin test: $1>",
-	test_end = "<End test: $1>",
-	test_expect_pass = "[+] $1: $2 ($3): ",
+	test_begin = "*** Begin test: $1 ***",
+	test_end = "*** End test: $1 ***",
+	test_expect_pass = "[expectReturn] $1: $2 ($3): ",
 	test_expect_pass_failed = "Expected passing call failed:",
-	test_expect_fail = "[-] $1: $2 ($3): ",
+	test_expect_fail = "[expectError] $1: $2 ($3): ",
 	test_expect_fail_passed = "Expected failing call passed:",
-	test_totals = "Passed: $1/$2, Warnings: $3",
+	test_totals = "$1 jobs passed. Warnings: $2"
 }
 local lang = errTest.lang
 
 
-local interp -- v v01
+local interp -- v v02
 do
 	local v, c = {}, function(t) for k in pairs(t) do t[k] = nil end end
 	interp = function(s, ...)
 		c(v)
 		for i = 1, select("#", ...) do
-			v[tostring(i)] = select(i, ...)
+			v[tostring(i)] = tostring(select(i, ...))
 		end
-		local r = s:gsub("%$(%d+)", v):gsub("%$;", "$")
+		local r = tostring(s):gsub("%$(%d+)", v):gsub("%$;", "$")
 		c(v)
 		return r
 	end
@@ -84,7 +78,7 @@ local _mt_test = {}
 _mt_test.__index = _mt_test
 
 
-local function _checkMultiType(val, list)
+local function _multiType(val, list)
 	for w in list:gmatch("(%w+)") do
 		if type(val) == w then
 			return true
@@ -93,8 +87,8 @@ local function _checkMultiType(val, list)
 end
 
 
-local function _assertArgType(arg_n, val, expected)
-	if not _checkMultiType(val, expected) then
+local function _argType(arg_n, val, expected)
+	if not _multiType(val, expected) then
 		error(interp(lang.assert_arg_bad_type, arg_n, expected, type(val)), 2)
 	end
 end
@@ -121,8 +115,8 @@ end
 
 
 function errTest.new(name, verbosity)
-	_assertArgType(1, name, "nil/string")
-	_assertArgType(2, verbosity, "nil/number")
+	_argType(1, name, "nil/string")
+	_argType(2, verbosity, "nil/number")
 
 	local self = {
 		name = name or "",
@@ -131,10 +125,9 @@ function errTest.new(name, verbosity)
 		reg = {},
 		jobs = {},
 
-		counters = {
-			pass = 0,
-			warn = 0,
-		}
+		lf_count = 0,
+
+		warnings = 0,
 	}
 
 	return setmetatable(self, _mt_test)
@@ -142,20 +135,20 @@ end
 
 
 function _mt_test:registerFunction(label, func)
-	_assertArgType(1, label, "nil/string")
-	_assertArgType(2, func, "function")
+	_argType(1, label, "nil/string")
+	_argType(2, func, "function")
 
 	self.reg[func] = label
 end
 
 
 function _mt_test:registerJob(desc, func)
-	_assertArgType(1, desc, "nil/string")
-	_assertArgType(2, func, "function")
+	_argType(1, desc, "nil/string")
+	_argType(2, func, "function")
 
 	for i, job in ipairs(self.jobs) do
 		if job[2] == func then
-			error(lang.err_add_dupe_job)
+			error(lang.err_add_dupe_job, 2)
 		end
 	end
 
@@ -164,16 +157,15 @@ end
 
 
 function _mt_test:runJobs()
-	if self.verbosity >= 1 then
-		print(interp(lang.test_begin, self.name))
-	end
+	self:print(1, interp(lang.test_begin, self.name))
+	self:lf(2)
 
 	local dupes = {}
 	for i, job in ipairs(self.jobs) do
 		local desc, func = job[1], job[2]
 
 		if not func then
-			error(interp(lang.err_missing_func, i))
+			error(interp(lang.err_missing_func, i), 2)
 		end
 
 		if dupes[func] then
@@ -181,45 +173,32 @@ function _mt_test:runJobs()
 		end
 		dupes[func] = true
 
-		if self.verbosity >= 2 then
-			io.write(interp(lang.job_msg_pre, i, #self.jobs, desc))
-			if self.verbosity >= 3 then
-				io.write("\n")
-			end
-		end
+		self:write(2, interp(lang.job_msg_pre, i, #self.jobs, desc))
+		self:lf(2)
 
-		local counters = self.counters
-		local ok, err = pcall(func, self)
-
-		if ok then
-			counters.pass = counters.pass + 1
-		end
-
-		if self.verbosity >= 2 then
-			io.write(interp(lang.job_msg_post, lang.res_pass) .. "\t")
-			if not ok then
-				io.write(tostring(err) or "")
-			end
-			io.write("\n")
-		end
+		func(self)
+		self:lf(3)
 	end
 
-	if self.verbosity >= 1 then
-		print(interp(lang.test_end, self.name))
-		local cnt = self.counters
-		print(interp(lang.test_totals, cnt.pass, #self.jobs, cnt.warn))
-	end
+	self:lf(2)
+	self:print(1, interp(lang.test_end, self.name))
+	self:print(1, interp(lang.test_totals, #self.jobs, self.warnings))
 end
 
 
-function _mt_test:allGood()
-	return self.counters.pass == #self.jobs
+function _mt_test:lf(level)
+	if self.lf_count <= 2 and self.verbosity >= level then
+		--io.write("LF " .. self.lf_count .. " > " .. self.lf_count + 1 .. ", LEVEL " .. level .. ":" .. self.verbosity)
+		self.lf_count = self.lf_count + 1
+		io.write("\n")
+	end
 end
 
 
 function _mt_test:print(level, ...)
 	if self.verbosity >= level then
 		print(...)
+		self.lf_count = 1
 	end
 end
 
@@ -227,94 +206,88 @@ end
 function _mt_test:write(level, str)
 	if self.verbosity >= level then
 		io.write(str)
+		io.flush()
+		self.lf_count = 0
 	end
 end
 
 
 function _mt_test:warn(str)
-	self.counters.warn = self.counters.warn + 1
+	self.warnings = self.warnings + 1
 	if self.verbosity >= 2 then
+		self.lf_count = 1
 		print(interp(lang.msg_warn, tostring(str)))
 	end
 end
 
 
 function _mt_test:expectLuaReturn(desc, func, ...)
-	_assertArgType(1, desc, "nil/string")
-	_assertArgType(2, func, "function")
+	_argType(1, desc, "nil/string")
+	_argType(2, func, "function")
 
-	if self.verbosity >= 3 then
-		io.write(interp(lang.test_expect_pass, desc or "", getLabel(self, func), varargsToString(self, ...)))
-		io.flush()
-	end
+	self:write(3, interp(lang.test_expect_pass, desc or "", getLabel(self, func), varargsToString(self, ...)))
 
 	local ok, res = pcall(func, ...)
 	if not ok then
 		error(lang.test_expect_pass_failed .. "\n\t" .. tostring(res))
-	else
-		io.write(lang.res_pass)
 	end
+
+	self:lf(4)
 
 	return ok, res
 end
 
 
 function _mt_test:expectLuaError(desc, func, ...)
-	_assertArgType(1, desc, "nil/string")
-	_assertArgType(2, func, "function")
+	_argType(1, desc, "nil/string")
+	_argType(2, func, "function")
 
-	if self.verbosity >= 3 then
-		io.write(interp(lang.test_expect_fail, desc or "", getLabel(self, func), varargsToString(self, ...)))
-		io.flush()
-	end
+	self:write(3, interp(lang.test_expect_fail, desc or "", getLabel(self, func), varargsToString(self, ...)))
 
 	local ok, res = pcall(func, ...)
 	if ok == true then
 		error(lang.test_expect_fail_passed .. "\n\t" .. tostring(res))
-	else
-		if self.verbosity >= 3 then
-			io.write(lang.res_fail .. "\n")
-		end
-		self:print(4, "->" .. tostring(res))
 	end
+
+	self:lf(4)
+	self:write(4, " >  " .. tostring(res))
+	self:lf(4)
+	self:lf(3)
 
 	return ok, res
 end
 
 
-function _mt_test:isEqual(a, b) if a ~= b then error(lang.fail_eq, 2) else self:print(5, "isEqual()") end end
-function _mt_test:isNotEqual(a, b) if a == b then error(lang.fail_neq, 2) else self:print(5, "isNotEqual()") end end
+function _mt_test:isEqual(a, b) self:print(4, "isEqual()", a, b); if a ~= b then error(lang.fail_eq, 2) end end
+function _mt_test:isNotEqual(a, b) self:print(4, "isNotEqual()", a, b) if a == b then error(lang.fail_neq, 2) end end
 
-function _mt_test:isBoolTrue(a) if a ~= true then error(lang.fail_bool_true, 2) else self:print(5, "isBoolTrue()") end end
-function _mt_test:isBoolFalse(a) if a ~= false then error(lang.fail_bool_false, 2) else self:print(5, "isBoolFalse()") end end
+function _mt_test:isBoolTrue(a) self:print(4, "isBoolTrue()", a) if a ~= true then error(lang.fail_bool_true, 2) end end
+function _mt_test:isBoolFalse(a) self:print(4, "isBoolFalse()", a) if a ~= false then error(lang.fail_bool_false, 2) end end
 
-function _mt_test:isEvalTrue(a) if not a then error(lang.fail_eval_true, 2) else self:print(5, "isEvalTrue()") end end
-function _mt_test:isEvalFalse(a) if a then error(lang.fail_eval_false, 2) else self:print(5, "isEvalFalse()") end end
+function _mt_test:isEvalTrue(a) self:print(4, "isEvalTrue()", a) if not a then error(lang.fail_eval_true, 2) end end
+function _mt_test:isEvalFalse(a) self:print(4, "isEvalFalse()", a) if a then error(lang.fail_eval_false, 2) end end
 
-function _mt_test:isNil(a) if a ~= nil then error(lang.fail_nil, 2) else self:print(5, "isNil()") end end
-function _mt_test:isNotNil(a) if a == nil then error(lang.fail_not_nil, 2) else self:print(5, "isNotNil()") end end
+function _mt_test:isNil(a) self:print(4, "isNil()", a) if a ~= nil then error(lang.fail_nil, 2) end end
+function _mt_test:isNotNil(a) self:print(4, "isNotNil()", a) if a == nil then error(lang.fail_not_nil, 2) end end
 
-function _mt_test:isNan(a) if a == a then error(lang.fail_missing_nan, 2) else self:print(5, "isNan()") end end
-function _mt_test:isNotNan(a) if a ~= a then error(lang.fail_unwanted_nan, 2) else self:print(5, "isNotNan()") end end
+function _mt_test:isNan(a) self:print(4, "isNan()", a) if a == a then error(lang.fail_missing_nan, 2) end end
+function _mt_test:isNotNan(a) self:print(4, "isNotNan()", a) if a ~= a then error(lang.fail_unwanted_nan, 2) end end
 
 
 function _mt_test:isType(val, expected)
-	_assertArgType(1, expected, "string")
-
-	if not _checkMultiType(val, expected) then
+	_argType(1, expected, "string")
+	self:print(4, "isType", type(val), ";", expected)
+	if not _multiType(val, expected) then
 		error(interp(lang.fail_type_check, expected, type(val)), 2)
-	else
-		self:print(5, "isType", expected)
 	end
 end
 
 
 function _mt_test:isNotType(val, not_expected)
-	_assertArgType(1, not_expected, "string")
-	if _checkMultiType(val, not_expected) then
+	_argType(1, not_expected, "string")
+	self:print(4, "isNotType", type(val), ";", not_expected)
+	if _multiType(val, not_expected) then
 		error(interp(lang.fail_not_type_check, not_expected, type(val)), 2)
-	else
-		self:print(5, "isNotType", not_expected)
 	end
 end
 

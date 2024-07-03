@@ -1,4 +1,4 @@
--- utf8Tools v1.2.3
+-- utf8Tools v1.3.0
 -- https://github.com/rabbitboots/utf8_tools
 
 
@@ -31,44 +31,38 @@ local utf8Tools = {}
 
 
 utf8Tools.options = {
-	check_surrogates = true,
-	exclude_invalid_octets = true,
+	check_surrogates = true
 }
-local options = utf8Tools.options
 
 
 utf8Tools.lang = {
-	arg_bad_type = "argument #$1: bad type (expected $2, got $3)",
 	arg_bad_int = "argument #$1: expected integer",
 	arg_bad_int_range = "argument #$1: expected integer in range ($2-$3)",
-	arg_expect_int = "argument #$1: expected integer",
-	arg_empty_str = "argument #$1: string must contain at least one character",
+	arg_bad_type = "argument #$1: bad type (expected $2, got $3)",
 	arg_start_end_oob = "start index is greater than end index",
+	byte_nil = "byte #$1 is nil",
+	byte_cont_oob = "continuation byte #$1 ($2) is out of range (0x80 - 0xbf)",
+	cp_oob = "code point is out of bounds",
+	err_iter_codes = "index $1: $2",
+	err_surrogate = "invalid code point (in surrogate range)",
+	len_mismatch = "$1-byte length mismatch. Got: $2, must be in this range: $3 - $4",
+	len_unknown = "unknown UTF-8 byte length marker",
 	str_i_oob = "string index is out of bounds",
-	invalid_b = "invalid octet value ($1) in byte #$2",
-	err_surrogate = "UTF-8 prohibits values between 0xd800 and 0xdfff (surrogate range). Received: $1",
-	cp_negative = "code point is negative",
-	cp_too_big = "code point is too large",
-	len_mismatch = "$1-octet length mismatch. Got: $2, must be in this range: $3 - $4",
-	trailing_1st = "trailing octet (2nd, 3rd or 4th) receieved as 1st",
-	len_unknown = "unable to determine octet length indicator in first byte of UTF-8 value",
-	octet_nil = "octet #$1 is nil",
-	octet_invalid_value = "invalid octet value ($1) in byte #$2",
-	octet_too_low = "byte #$1 is too low ($2) for multi-byte encoding. Min: 0x80",
-	octet_too_high = "byte #$1 is too high ($2) for multi-byte encoding. Max: 0xbf",
+	trailing_1st = "trailing byte (2nd, 3rd or 4th) receieved as 1st",
+	var_i_err = "argument $1: $2"
 }
 local lang = utf8Tools.lang
 
 
-local interp -- v v01
+local interp -- v v02
 do
 	local v, c = {}, function(t) for k in pairs(t) do t[k] = nil end end
 	interp = function(s, ...)
 		c(v)
 		for i = 1, select("#", ...) do
-			v[tostring(i)] = select(i, ...)
+			v[tostring(i)] = tostring(select(i, ...))
 		end
-		local r = s:gsub("%$(%d+)", v):gsub("%$;", "$")
+		local r = tostring(s):gsub("%$(%d+)", v):gsub("%$;", "$")
 		c(v)
 		return r
 	end
@@ -76,266 +70,271 @@ end
 utf8Tools._interp = interp
 
 
--- Octets 0xc0, 0xc1, and (0xf5 - 0xff) should never appear in a UTF-8 value.
-utf8Tools.lut_invalid_octet = {}
-for i, v in ipairs({0xc0, 0xc1, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff}) do
-	utf8Tools.lut_invalid_octet[v] = true
-end
+local function HEX(n) return ("0x%x"):format(n) end
 
 
--- Used to verify number length against allowed octet ranges (1, 2, 3, 4).
-local lut_oct_min_max = {{0x00000, 0x00007f}, {0x00080, 0x0007ff}, {0x00800, 0x00ffff}, {0x10000, 0x10ffff}}
+-- Verifies code point length against allowed UTF-8 byte ranges (1, 2, 3, 4).
+local min_max = {{0x0, 0x7f}, {0x80, 0x7ff}, {0x800, 0xffff}, {0x10000, 0x10ffff}}
 
 
-function utf8Tools._assertArgType(arg_n, var, expected)
-	if type(var) ~= expected then
-		error(interp(lang.arg_bad_type, arg_n, expected, type(var)), 2)
+function utf8Tools._argType(n, v, e)
+	if type(v) ~= e then
+		error(interp(lang.arg_bad_type, n, e, type(v)), 2)
 	end
 end
-local _assertArgType = utf8Tools._assertArgType
+local _argType = utf8Tools._argType
 
 
-local function _assertInt(arg_n, v)
+local function _argInt(n, v)
 	if type(v) ~= "number" or math.floor(v) ~= v then
-		error(interp(lang.arg_bad_int, arg_n), 2)
+		error(interp(lang.arg_bad_int, n), 2)
 	end
 end
 
-local function _assertIntRange(arg_n, v, min, max)
+local function _argIntRange(n, v, min, max)
 	if type(v) ~= "number" or math.floor(v) ~= v or v < min or v > max then
-		error(interp(lang.arg_bad_int_range, arg_n, min, max), 2)
+		error(interp(lang.arg_bad_int_range, n, min, max), 2)
 	end
 end
 
 
--- Checks octets 2-4 in a multi-octet code point.
-local function _checkFollowingOctet(octet, position, n_octets)
-	-- NOTE: Do not call on the first octet.
-	if not octet then
-		return interp(lang.octet_nil, position)
+local function _length(b)
+	-- Byte length marker. Returns number on success, string on failure
+	return b < 0x80 and 1
+	or b >= 0xc0 and b < 0xe0 and 2
+	or b >= 0xe0 and b < 0xf0 and 3
+	or b >= 0xf0 and b < 0xf8 and 4
+	or b >= 0x80 and b < 0xbf and "trailing_1st"
+	or "len_unknown"
+end
 
-	-- Check some bytes which are prohibited in any position in a UTF-8 code point
-	elseif options.exclude_invalid_octets and utf8Tools.lut_invalid_octet[octet] then
-		return interp(octet_invalid_value, octet, position)
 
-	-- Verify "following" byte mark	
-	-- < 1000:0000
-	elseif octet < 0x80 then
-		return interp(lang.octet_too_low, position, octet)
+local function _cont(b, pos)
+	-- Checks bytes 2-4 in a multi-byte code point
+	-- Do not call on the first byte
+	if not b then
+		return true, interp(lang.byte_nil, pos)
 
-	-- >= 1100:0000
-	elseif octet >= 0xc0 then
-		return interp(lang.octet_too_high, position, octet)
+	-- Verify "following" byte mark
+	elseif b < 0x80 or b >= 0xc0 then
+		return true, interp(lang.byte_cont_oob, pos, HEX(b))
 	end
 end
 
 
-local function _getLengthMarker(byte)
-	-- (returns a number on success, or error string on failure)
-	return (byte < 0x80) and 1 -- 1 octet: 0000:0000 - 0111:1111
-	or (byte >= 0xc0 and byte < 0xe0) and 2 -- 2 octets: 1100:0000 - 1101:1111
-	or (byte >= 0xe0 and byte < 0xf0) and 3 -- 3 octets: 1110:0000 - 1110:1111
-	or (byte >= 0xf0 and byte < 0xf8) and 4 -- 4 octets: 1111:0000 - 1111:0111
-	or (byte >= 0x80 and byte < 0xbf) and lang.trailing_1st -- 1000:0000 - 1011:1111
-	or lang.len_unknown
-end
-
-
-local function _checkCodePointIssue(code_point, u8_len)
-	if options.check_surrogates then
-		if code_point >= 0xd800 and code_point <= 0xdfff then
-			return false, interp(lang.err_surrogate, string.format("0x%x", code_point))
+local function _checkCode(c, len)
+	if utf8Tools.options.check_surrogates then
+		if c >= 0xd800 and c <= 0xdfff then
+			return true, lang.err_surrogate
 		end
 	end
 
-	if code_point < 0 then
-		return false, lang.cp_negative
-
-	elseif code_point > 0x10ffff then
-		return false, lang.cp_too_big
+	if c < 0 or c > 0x10ffff then
+		return true, lang.cp_oob
 	end
 
-	-- Look for overlong values based on the octet count.
+	-- Look for too-long or too-short values based on the byte count.
 	-- (Only applicable if known to have originated from a UTF-8 sequence.)
-	if u8_len ~= false then
-		local min_max = lut_oct_min_max[u8_len]
-		if code_point < min_max[1] or code_point > min_max[2] then
-			return false, interp(lang.len_mismatch, u8_len, code_point, min_max[1], min_max[2])
+	if len then
+		local range = min_max[len]
+		if c < range[1] or c > range[2] then
+			return true, interp(lang.len_mismatch, len, HEX(c), HEX(range[1]), HEX(range[2]))
 		end
 	end
-
-	return true
 end
 
 
-local function _codePointToBytes(number)
-	if number < 0x80 then
-		return number
-
-	elseif number < 0x800 then
-		local b1 = 0xc0 + math.floor(number / 0x40)
-		local b2 = 0x80 + (number % 0x40)
-
-		return b1, b2
-
-	elseif number < 0x10000 then
-		local b1 = 0xe0 + math.floor(number / 0x1000)
-		local b2 = 0x80 + math.floor( (number % 0x1000) / 0x40)
-		local b3 = 0x80 + (number % 0x40)
-
-		return b1, b2, b3
-
-	elseif number <= 0x10ffff then
-		local b1 = 0xf0 + math.floor(number / 0x40000)
-		local b2 = 0x80 + math.floor( (number % 0x40000) / 0x1000)
-		local b3 = 0x80 + math.floor( (number % 0x1000) / 0x40)
-		local b4 = 0x80 + (number % 0x40)
-
-		return b1, b2, b3, b4
+local function _codeFromStr(s, i)
+	local b1, b2, b3, b4 = s:byte(i, i + 3)
+	local len = _length(b1)
+	if type(len) == "string" then
+		return nil, lang[len] or "?"
 	end
+
+	local c, err, msg
+	if len == 1 then
+		c = b1
+
+	elseif len == 2 then
+		err, msg = _cont(b2, 2, 2) if err then return nil, msg end
+		c = (b1 - 0xc0) * 0x40 + (b2 - 0x80)
+
+	elseif len == 3 then
+		err, msg = _cont(b2, 2, 3) if err then return nil, msg end
+		err, msg = _cont(b3, 3, 3) if err then return nil, msg end
+		c = (b1 - 0xe0) * 0x1000 + (b2 - 0x80) * 0x40 + (b3 - 0x80)
+
+	elseif len == 4 then
+		err, msg = _cont(b2, 2, 4) if err then return nil, msg end
+		err, msg = _cont(b3, 3, 4) if err then return nil, msg end
+		err, msg = _cont(b4, 4, 4) if err then return nil, msg end
+		c = (b1 - 0xf0) * 0x40000 + (b2 - 0x80) * 0x1000 + (b3 - 0x80) * 0x40 + (b4 - 0x80)
+	end
+
+	err, msg = _checkCode(c, len)
+	if err then
+		return nil, msg
+	end
+
+	return c, len
 end
 
 
-local function _bytesToUCString(b1, b2, b3, b4)
-	if b4 then
-		return string.char(b1, b2, b3, b4)
+function utf8Tools.check(s, i, j)
+	_argType(1, s, "string")
+	i = i or (#s > 0 and 1 or 0)
+	j = j or #s
 
-	elseif b3 then
-		return string.char(b1, b2, b3)
+	local n = 0
 
-	elseif b2 then
-		return string.char(b1, b2)
-
-	else
-		return string.char(b1)
-	end
-end
-
-
-local function _getCodePointFromString(str, pos)
-	local b1, b2, b3, b4 = str:byte(pos, pos + 3)
-	local u8_len = _getLengthMarker(b1)
-	if type(u8_len) == "string" then
-		return nil, u8_len
-
-	elseif options.exclude_invalid_octets and utf8Tools.lut_invalid_octet[b1] then
-		return nil, interp(lang.invalid_b, b1, 1)
+	if #s == 0 and i == 0 and j == 0 then
+		return n
 	end
 
-	local code_point
-	local err_str
-
-	if u8_len == 1 then
-		code_point = b1
-
-	elseif u8_len == 2 then
-		err_str = _checkFollowingOctet(b2, 2, 2) if err_str then return nil, err_str end
-		code_point = (b1 - 0xc0) * 0x40 + (b2 - 0x80)
-
-	elseif u8_len == 3 then
-		err_str = _checkFollowingOctet(b2, 2, 3) if err_str then return nil, err_str end
-		err_str = _checkFollowingOctet(b3, 3, 3) if err_str then return nil, err_str end
-		code_point = (b1 - 0xe0) * 0x1000 + (b2 - 0x80) * 0x40 + (b3 - 0x80)
-
-	elseif u8_len == 4 then
-		err_str = _checkFollowingOctet(b2, 2, 4) if err_str then return nil, err_str end
-		err_str = _checkFollowingOctet(b3, 3, 4) if err_str then return nil, err_str end
-		err_str = _checkFollowingOctet(b4, 4, 4) if err_str then return nil, err_str end
-		code_point = (b1 - 0xf0) * 0x40000 + (b2 - 0x80) * 0x1000 + (b3 - 0x80) * 0x40 + (b4 - 0x80)
-	end
-
-	local code_ok, code_err = _checkCodePointIssue(code_point, u8_len)
-	if not code_ok then
-		return nil, code_err
-	end
-
-	return code_point, u8_len
-end
-
-
-function utf8Tools.getUCString(str, pos)
-	_assertArgType(1, str, "string")
-	_assertArgType(2, pos, "number")
-
-	if pos < 1 or pos > #str then
-		return nil, lang.str_i_oob
-	end
-
-	local code_point, u8_len = _getCodePointFromString(str, pos)
-
-	if not code_point then
-		return nil, u8_len -- error string
-	end
-
-	return str:sub(pos, pos + u8_len - 1)
-end
-
-
-function utf8Tools.step(str, pos)
-	_assertArgType(1, str, "string")
-	_assertIntRange(2, pos, 1, #str + 1)
-
-	while pos <= #str do
-		local b1 = str:byte(pos)
-		local u8_len = _getLengthMarker(b1)
-		if type(u8_len) == "number" then
-			return pos
-		end
-		pos = pos + 1
-	end
-
-	return #str + 1
-end
-
-
-function utf8Tools.check(str, i, j)
-	_assertArgType(1, str, "string")
-
-	local str_max = math.max(1, #str)
-	if i == nil then i = 1 end
-	if j == nil then j = str_max end
-
-	_assertIntRange(2, i, 1, str_max)
-	_assertIntRange(3, j, 1, str_max)
+	_argIntRange(2, i, 1, #s)
+	_argIntRange(3, j, 1, #s)
 	if i > j then error(lang.arg_start_end_oob) end
 
-	if #str == 0 then
-		return true
-	end
-
 	while i <= j do
-		local code_point, u8_len = _getCodePointFromString(str, i)
-
-		if not code_point then
-			return false, i, u8_len -- error string
+		local c, len = _codeFromStr(s, i)
+		if not c then
+			return nil, len, i -- len: error string
 		end
-		i = i + u8_len
+		i = i + len
+		n = n + 1
 	end
 
-	return true
+	return n
 end
 
 
-function utf8Tools.ucStringToCodePoint(str, pos)
-	_assertArgType(1, str, "string")
-	if #str == 0 then error(interp(lang.arg_empty_str)) end
-	_assertIntRange(2, pos, 1, #str)
+function utf8Tools.scrub(s, repl)
+	_argType(1, s, "string")
+	_argType(2, repl, "string")
 
-	return _getCodePointFromString(str, pos)
+	local t, i = {}, 1
+
+	while i <= #s do
+		local j, _, bad_i = utf8Tools.check(s, i)
+		if not j then
+			t[#t + 1] = s:sub(i, bad_i - 1)
+			t[#t + 1] = repl
+			i = utf8Tools.step(s, bad_i)
+		else
+			t[#t + 1] = s:sub(i)
+			break
+		end
+	end
+
+	return table.concat(t)
 end
 
 
-function utf8Tools.codePointToUCString(code)
-	_assertInt(1, code)
+function utf8Tools.codeFromString(s, i)
+	_argType(1, s, "string")
+	i = i == nil and 1 or i
+	_argInt(2, i, "number")
+	if i < 1 or i > #s then error(interp(lang.str_i_oob)) end
 
-	local ok, err = _checkCodePointIssue(code, false)
-	if not ok then
-		return nil, err
+	local c, len = _codeFromStr(s, i)
+
+	if not c then
+		return nil, len -- error string
 	end
 
-	local b1, b2, b3, b4 = _codePointToBytes(code)
+	return c, s:sub(i, i + len - 1)
+end
 
-	return _bytesToUCString(b1, b2, b3, b4)
+
+function utf8Tools.stringFromCode(c)
+	_argInt(1, c)
+
+	local err, msg = _checkCode(c, nil)
+	if err then
+		return nil, msg
+
+	elseif c < 0x80 then
+		return string.char(c)
+
+	elseif c < 0x800 then
+		return string.char(
+			0xc0 + math.floor(c / 0x40),
+			0x80 + (c % 0x40)
+		)
+
+	elseif c < 0x10000 then
+		return string.char(
+			0xe0 + math.floor(c / 0x1000),
+			0x80 + math.floor( (c % 0x1000) / 0x40),
+			0x80 + (c % 0x40)
+		)
+
+	elseif c <= 0x10ffff then
+		return string.char(
+			0xf0 + math.floor(c / 0x40000),
+			0x80 + math.floor((c % 0x40000) / 0x1000),
+			0x80 + math.floor((c % 0x1000) / 0x40),
+			0x80 + (c % 0x40)
+		)
+	end
+end
+
+
+function utf8Tools.step(s, i)
+	_argType(1, s, "string")
+	_argIntRange(2, i, 0, #s)
+
+	while i < #s do
+		i = i + 1
+		if type(_length(s:byte(i))) == "number" then
+			return i
+		end
+	end
+end
+
+
+function utf8Tools.stepBack(s, i)
+	_argType(1, s, "string")
+	_argIntRange(2, i, 1, #s + 1)
+
+	while i > 1 do
+		i = i - 1
+		if type(_length(s:byte(i))) == "number" then
+			return i
+		end
+	end
+end
+
+
+local function _codes(s, i)
+	if i > #s then
+		return
+	end
+	local c, s2 = utf8Tools.codeFromString(s, i)
+	if not c then
+		error(interp(lang.err_iter_codes, i, s2))
+	end
+	return i + #s2, c, s2
+end
+
+
+function utf8Tools.codes(s)
+	_argType(1, s, "string")
+
+	return _codes, s, 1
+end
+
+
+function utf8Tools.concatCodes(...)
+	local t = {...}
+	for i = 1, #t do
+		local s, err = utf8Tools.stringFromCode(t[i])
+		if not s then
+			error(interp(lang.var_i_err, i, err))
+		end
+		t[i] = s
+	end
+	return table.concat(t)
 end
 
 

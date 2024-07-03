@@ -1,160 +1,221 @@
-**Version:** 1.2.3
+**Version:** 1.3.0
 
 # utf8Tools
 
-Some UTF-8 utility functions for Lua.
+UTF-8 utility functions for Lua.
 
-Tested with Lua 5.1.5, Lua 5.2.4, Lua 5.3.6, Lua 5.4.6 and LuaJIT 2.1.1707061634 on Fedora 39, and LuaJIT 2.1.0-beta3 on Windows 10.
+Tested with Lua 5.1.5, Lua 5.2.4, Lua 5.3.6, Lua 5.4.6 and LuaJIT 2.1.1707061634 on Fedora 39, and Lua 5.1.5 on Windows 10.
 
 
 ## Files
 
 * `utf8_tools.lua`: The main file.
 
-* `utf8_conv.lua`: Additional functions for converting UTF-16 and ISO 8859-1 (Latin-1) to UTF-8.
+* `utf8_conv.lua`: Auxiliary functions for converting UTF-16 and ISO 8859-1 (Latin-1) to UTF-8 and back.
 
 
 ## Terminology
 
-**UCString**: A UTF-8 Sequence; a single Unicode Code Point, encoded in UTF-8 and stored in a Lua string. `"A"`
+**Code Point**: a Unicode Code Point, stored as a Lua number. `65` (for A)
 
-**Code Point**: a Unicode Code Point, stored as a Lua number, like `65` (for A).
+**UTF-8 Sequence**: A single Unicode Code Point, encoded in UTF-8 and stored as a Lua string. `"A"`
 
-**UTF-8 start octet**: The first byte in a UTF-8 Sequence, which indicates the length of the sequence (one to four bytes).
+**Start Byte**: The first byte in a UTF-8 Sequence, which indicates the length of the sequence (one to four bytes).
 
-
-# utf8Tools API
-
-## utf8Tools.getUCString
-
-Gets a UTF-8 Sequence from a string.
-
-`local u8_seq = utf8Tools.getUCString(str, pos)`
-
-* `str`: The string to read.
-
-* `pos`: The start index of the UTF-8 Sequence.
-
-**Returns:** The UTF-8 Sequence as a string, or `nil` plus error string if unsuccessful.
+**Continuation Byte**: The second, third or fourth byte in a UTF-8 Sequence. A UTF-8 Sequence may not be longer than 4 bytes.
 
 
-## utf8Tools.step
-
-Searches the string for a UTF-8 start octet. If no start octet is found, it returns one after the final byte position `(#str + 1)`.
-
-`local index = utf8Tools.step(str, pos)`
-
-* `str`: The string to search.
-
-* `pos`: The first byte index to check. Can be from `1` to `#str + 1`.
-
-**Returns:** Index of the next start octet, or `#str + 1` if the end of the string is reached.
-
-**Notes:**
-
-* This function does not validate the string's encoding.
-
-
-## utf8Tools.check
-
-Checks a string for UTF-8 encoding problems and bad code point values.
-
-`local ok, err = utf8Tools.check(str, [i], [j])`
-
-* `str`: The string to check.
-
-* `[i]`: *(1)* The first byte index.
-
-* `[j]`: *(#str)* The last byte index. Cannot be lower than `i`.
-
-**Returns:** `true` if no problems found. Otherwise, `false`, position, and error string.
-
-
-## utf8Tools.ucStringToCodePoint
-
-Converts a UTF-8 Sequence within a string to a numeric code point.
-
-`local code_point, err = utf8Tools.ucStringToCodePoint(str, pos)`
-
-* `str`: String containing the UTF-8 Sequence to convert.
-
-* `pos`: Starting position in the string to check.
-
-**Returns:** The code point in number form and its size as a UTF-8 Sequence, or `nil` and an error string if a problem was detected.
-
-
-## utf8Tools.codePointToUCString
-
-Converts a code point in numeric form to a UTF-8 Sequence string.
-
-`local u8_seq, err = utf8Tools.codePointToUCString(code)`
-
-* `code`: The code point to convert. Must be an integer.
-
-**Returns:** the UTF-8 Sequence in string form, or `nil` and an error string if there was a problem validating the UTF-8 Sequence.
-
-
+# utf8Tools
 
 ## utf8Tools Options
 
-These should be set to `true` unless you have special requirements.
-
 `utf8Tools.options.check_surrogates`: *(true)* Functions will check the Unicode surrogate range. Code points in this range are forbidden by the UTF-8 spec, but some decoders allow them through.
 
-`options.exclude_invalid_octets`: *(true)* Functions will exclude UTF-8 Sequences with bytes that are forbidden by the spec.
+
+## utf8Tools API
+
+### utf8Tools.check
+
+Checks a UTF-8 string for encoding problems and invalid code points.
+
+`local ok, err, byte = utf8Tools.check(s, [i], [j])`
+
+* `s`: The string to check.
+
+* `[i]`: *(empty string: 0; non-empty string: 1)* The first byte index.
+
+* `[j]`: *(#str)* The last byte index. Cannot be lower than `i`.
+
+**Returns:** If no problems were found, the total number of code points scanned. Otherwise, `nil`, error string, and byte index.
+
+**Notes:**
+
+* As a special case, this function will return `0` when given an empty string and values of zero for `i` and `j`. (In other words, `utf8Tools.check("")` will always return `0`.)
+
+* For non-empty strings, if the range arguments are specified, then `i` needs to point to a UTF-8 Start Byte, and `j` needs to point to the last byte of a UTF-8-encoded character.
 
 
-# utf8Conv API
+### utf8Tools.scrub
+
+Replaces bad UTF-8 Sequences in a string.
+
+`local str = utf8Tools.scrub(s, repl)`
+
+* `s`: The string to scrub.
+
+* `repl`: A replacement string to use in place of the bad UTF-8 Sequences. Use an empty string to just remove the invalid bytes.
 
 
-## utf8Conv.latin1_utf8
+**Returns:** The scrubbed UTF-8 string.
+
+
+### utf8Tools.codeFromString
+
+Gets a Unicode Code Point and its isolated UTF-8 Sequence from a string.
+
+`local code, u8_seq = utf8Tools.codeFromString(s, [i])`
+
+* `s`: The UTF-8 string to read. Cannot be empty.
+
+* `[i]`: *(1)* The byte position to read from. Must point to a valid UTF-8 Start Byte.
+
+
+**Returns:** The code point number and its equivalent UTF-8 Sequence as a string, or `nil` plus an error string if unsuccessful.
+
+
+### utf8Tools.stringFromCode
+
+Converts a code point in numeric form to a UTF-8 Sequence (string).
+
+`local u8_seq, err = utf8Tools.stringFromCode(c)`
+
+* `c`: The code point number.
+
+**Returns:** the UTF-8 Sequence (string), or `nil` plus an error string if unsuccessful.
+
+
+### utf8Tools.step
+
+Looks for a Start Byte from a byte position through to the end of the string.
+
+This function **does not validate** the encoding.
+
+`local index = utf8Tools.step(s, i)`
+
+* `s`: The string to search.
+
+* `i`: Starting position; bytes *after* this index are checked. Can be from `0` to `#str`.
+
+**Returns:** Index of the next Start Byte, or `nil` if the end of the string is reached.
+
+**Notes:**
+
+* With empty strings, the only accepted position for `i` is 0.
+
+
+### utf8Tools.stepBack
+
+Looks for a Start Byte from a byte position through to the start of the string.
+
+This function **does not validate** the encoding.
+
+`local index = utf8Tools.stepBack(s, i)`
+
+* `s`: The string to search.
+
+* `i`: Starting position; bytes *before* this index are checked. Can be from `1` to `#str + 1`.
+
+**Returns:** Index of the previous Start Byte, or `nil` if the start of the string is reached.
+
+**Notes:**
+
+* With empty strings, the only accepted position for `i` is 1.
+
+
+### utf8Tools.codes
+
+A loop iterator for code points in a UTF-8 string, where `i` is the byte position, `c` is the code point number, and `u` is the code point's UTF-8 substring.
+
+This function **raises a Lua error** if it encounters a problem with the encoding or the code point values.
+
+`for i, c, u in utf8.codes(s) do …`
+
+* `s`: The string to iterate.
+
+**Returns:** The byte position `i`, the code point number `c`, and the code point's UTF-8 string representation `u`.
+
+
+### utf8Tools.concatCodes
+
+Creates a UTF-8 string from one or more code point numbers.
+
+This function **raises a Lua error** if it encounters a problem with the code point numbers.
+
+`local str = utf8Tools.concatCodes(...)`
+
+* `...`: Code point numbers.
+
+**Returns:** A concatenated UTF-8 string.
+
+**Notes:**
+
+* This function allocates a temporary table. To convert single code points, `utf8Tools.stringFromCode()` can be used instead.
+
+
+# utf8Conv
+
+## utf8Conv API
+
+### utf8Conv.latin1_utf8
 
 Converts a Latin 1 (ISO 8859-1) string to UTF-8.
 
-`utf8Conv.latin1_utf8(str)`
+`utf8Conv.latin1_utf8(s)`
 
-* `str`: The Latin 1 string to convert.
+* `s`: The Latin 1 string to convert.
 
-**Returns:** The converted UTF-8 string, or `nil` and an error string if there was a problem.
-
-
-## utf8Conv.utf8_latin1
-
-Converts a UTF-8 string to Latin 1 (ISO 8859-1). Note that only code points 0 through 255 can be directly mapped to a Latin 1 string.
-
-`utf8Conv.utf8_latin1(str, [unmappable])`
-
-* `str`: The UTF-8 string to convert.
-
-* `[unmappable]`: Controls what happens when unmappable code points are encountered (anything above U+00FF). When `unmappable` is a string, it is used in place of the unmappable code point. (Pass in an empty string to ignore unmappable code points.) When `unmappable` is any other type, the function returns `nil`, the byte where the unmappable code point was encountered, and an error string.
-
-**Returns:** The converted Latin 1 string, or `nil`, byte index, and an error string if there was a problem.
+**Returns:** The converted UTF-8 string, or `nil`, error string, and byte index if there was a problem.
 
 
-## utf8Tools.utf16_utf8
+### utf8Conv.utf8_latin1
+
+Converts a UTF-8 string to Latin 1 (ISO 8859-1).
+
+Only code points 0 through 255 can be directly mapped to a Latin 1 string. Use the `[unmapped]` argument to control what happens when an unmappable code point is encountered.
+
+`utf8Conv.utf8_latin1(s, [unmapped])`
+
+* `s`: The UTF-8 string to convert.
+
+* `[unmapped]`: When `unmapped` is a string, it is used in place of unmappable code points. (Pass in an empty string to ignore unmappable code points.) When `unmapped` is any other type, the function returns `nil`, the byte where the unmappable code point was encountered, and an error string.
+
+**Returns:** The converted Latin 1 string, or `nil`, error string, and byte index if there was a problem.
+
+
+### utf8Tools.utf16_utf8
 
 Converts a UTF-16 string to UTF-8.
 
-`utf8Conv.utf16_utf8(str, [big_endian])`
+`utf8Conv.utf16_utf8(s, [big_en])`
 
-* `str`: The UTF-16 string to convert.
+* `s`: The UTF-16 string to convert.
 
-* `[big_endian]`: *(nil)* `true` if the input UTF-16 string is big-endian, `false/nil` if it is little-endian.
+* `[big_en]`: *(nil)* `true` if the input UTF-16 string is big-endian, `false/nil` if it is little-endian.
 
-**Returns:** The converted UTF-8 string, or `nil`, byte index, and an error string if there was a problem.
+**Returns:** The converted UTF-8 string, or `nil`, error string, and byte index if there was a problem.
 
 
-## utf8Conv.utf8_utf16
+### utf8Conv.utf8_utf16
 
 Converts a UTF-8 string to UTF-16.
 
-`utf8Conv.utf8_utf16(str, [big_endian])`
+`utf8Conv.utf8_utf16(s, [big_en])`
 
-* `str`: The UTF-8 string to convert.
+* `s`: The UTF-8 string to convert.
 
-* `[big_endian]`: *(nil)* `true` if the converted UTF-16 string is big-endian, `false/nil` if it is little-endian.
+* `[big_en]`: *(nil)* `true` if the converted UTF-16 string is big-endian, `false/nil` if it is little-endian.
 
-**Returns:** The converted UTF-16 string, or `nil`, byte index, and an error string if there was a problem.
+**Returns:** The converted UTF-16 string, or `nil`, error string, and byte index if there was a problem.
 
 
 # References
