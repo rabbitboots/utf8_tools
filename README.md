@@ -187,7 +187,7 @@ Only code points 0 through 255 can be directly mapped to a Latin 1 string. Use t
 
 * `s`: The UTF-8 string to convert.
 
-* `[unmapped]`: When `unmapped` is a string, it is used in place of unmappable code points. (Pass in an empty string to ignore unmappable code points.) When `unmapped` is any other type, the function returns `nil`, the byte where the unmappable code point was encountered, and an error string.
+* `[unmapped]`: When `unmapped` is a string, it is used in place of unmappable code points. (Pass in an empty string to ignore unmappable code points.) When `unmapped` is any other type, the function returns `nil`, an error string, and the byte where the unmappable code point was encountered.
 
 **Returns:** The converted Latin 1 string, or `nil`, error string, and byte index if there was a problem.
 
