@@ -20,7 +20,7 @@ Tested with Lua 5.1.5, Lua 5.2.4, Lua 5.3.6, Lua 5.4.6 and LuaJIT 2.1.1707061634
 
 **UTF-8 Sequence**: A single Unicode Code Point, encoded in UTF-8 and stored as a Lua string. `"A"`
 
-**Start Byte**: The first byte in a UTF-8 Sequence, which indicates the length of the sequence (one to four bytes).
+**Start Byte**: The first byte in a UTF-8 Sequence. The length of the sequence is encoded in the start byte.
 
 **Continuation Byte**: The second, third or fourth byte in a UTF-8 Sequence. A UTF-8 Sequence may not be longer than 4 bytes.
 
@@ -136,7 +136,7 @@ This function **does not validate** the encoding.
 
 A loop iterator for code points in a UTF-8 string, where `i` is the byte position, `c` is the code point number, and `u` is the code point's UTF-8 substring.
 
-This function **raises a Lua error** if it encounters a problem with the encoding or the code point values.
+This function **raises a Lua error** if it encounters a problem with the UTF-8 encoding or with the code point values.
 
 `for i, c, u in utf8.codes(s) do …`
 
