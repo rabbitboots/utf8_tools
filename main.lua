@@ -1,8 +1,8 @@
 --[[
-utf8Tools.check() + LÖVE UTF-8 encoding tester.
+utf8Tools.check() / utf8Tools.checkAlt() + LÖVE UTF-8 encoding tester.
 
-Checks some known good and bad strings. If utf8Tools.check() passes a string that LÖVE rejects, the test is
-considered a failure.
+Checks some known good and bad strings. If utf8Tools.check() or utf8Tools.checkAlt() pass a string that LÖVE rejects, the test is
+considered a failure. The first results of check() and checkAlt() must also agree.
 
 Output is printed to the console. If all goes well, the program automatically terminates.
 --]]
@@ -42,7 +42,8 @@ local function testString(str)
 	local font_getWidth = font.getWidth
 	local love_ok, love_err = pcall(font_getWidth, font, str)
 
-	local uc_ok, uc_pos, uc_err = utf8Tools.check(str)
+	local uc_ok, uc_err, uc_pos = utf8Tools.check(str)
+	local uc_ok2, uc_err2, uc_pos2 = utf8Tools.checkAlt(str)
 
 	if not love_ok then
 		print("\tLÖVE error: " .. love_err)
@@ -52,8 +53,18 @@ local function testString(str)
 		print("\tUC error: " .. uc_pos or "...", uc_err)
 	end
 
+	if not uc_ok2 then
+		print("\tUC2 error: " .. uc_pos2 or "...", uc_err2)
+	end
+
+	if uc_ok ~= uc_ok2 then
+		error("disagreement in the results of utf8Tools.check() and utf8Tools.checkAlt()")
+	end
+
+	-- NOTE: error strings from utf8Tools.check() and utf8Tools.checkAlt() are not identical.
+
 	if not love_ok and uc_ok then
-		error("utf8Tools.check passed a string that LÖVE rejected.")
+		error("utf8Tools.check passed a string that LÖVE rejected")
 	end
 end
 

@@ -1,5 +1,28 @@
 # utf8Tools Changelog
 
+# v1.4.0 (4 Sept 2024)
+
+**NOTE:** This is an API-breaking update.
+
+* Implemented PUC-Lua optimizations for a small performance boost. (Heavier use of internal local variables.)
+
+* Imported [kikito's utf8_validator.lua](https://github.com/kikito/utf8_validator.lua) (which is also MIT-licensed) as `utf8Tools.checkAlt()`. This function can be faster than `utf8Tools.check()` under PUC-Lua. Note that it does not respect the setting for ignoring surrogate values.
+
+* Added an argument to `utf8Tools.scrub()` to use `checkAlt()` instead of `check()`.
+
+* Minor changes to the internal function `_codeFromStr()`.
+
+* Removed the `utf8Tools.options` table. The only remaining option was `check_surrogates`; to read or change this option, use `utf8Tools.getCheckSurrogates()` and `utf8Tools.setCheckSurrogates()`.
+
+* Updated test files and upgraded errTest.
+
+* Minor updates to the readme.
+
+## Upgrade Guide From v1.3.0 to v1.4.0
+
+* `utf8Tools.options.check_surrogates` no longer exists. Use the function `utf8Tools.setCheckSurrogates()` to alter this setting.
+
+
 # v1.3.0 (3 July 2024)
 
 **NOTE:** This is an API-breaking update.

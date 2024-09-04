@@ -1,4 +1,4 @@
-**Version:** 1.3.0
+**Version:** 1.4.0
 
 # utf8Tools
 
@@ -24,17 +24,32 @@ Tested with Lua 5.1.5, Lua 5.2.4, Lua 5.3.6, Lua 5.4.6 and LuaJIT 2.1.1707061634
 
 **Continuation Byte**: The second, third or fourth byte in a UTF-8 Sequence. A UTF-8 Sequence may not be longer than 4 bytes.
 
-
-# utf8Tools
-
-## utf8Tools Options
-
-`utf8Tools.options.check_surrogates`: *(true)* Functions will check the Unicode surrogate range. Code points in this range are forbidden by the UTF-8 spec, but some decoders allow them through.
+**Surrogate**: Values in the range of U±D800 to U±DFFF are reserved for *surrogate pairs* in UTF-16, and are not valid code points.
 
 
-## utf8Tools API
+# utf8Tools API
 
-### utf8Tools.check
+## utf8Tools.getCheckSurrogates
+
+Gets the library's setting for checking surrogate values.
+
+`local enabled = utf8Tools.getCheckSurrogates()`
+
+**Returns:** `true` if surrogates are rejected as invalid, `false` if they are ignored.
+
+
+## utf8Tools.setCheckSurrogates
+
+*Default: true*
+
+Sets the library to check or ignore surrogate values.
+
+`utf8Tools.setCheckSurrogates(enabled)`
+
+* `enabled`: `true` to reject surrogates as invalid, `false/nil` to ignore them.
+
+
+## utf8Tools.check
 
 Checks a UTF-8 string for encoding problems and invalid code points.
 
@@ -55,21 +70,44 @@ Checks a UTF-8 string for encoding problems and invalid code points.
 * For non-empty strings, if the range arguments are specified, then `i` needs to point to a UTF-8 Start Byte, and `j` needs to point to the last byte of a UTF-8-encoded character.
 
 
-### utf8Tools.scrub
+## utf8Tools.checkAlt
+
+An alternative UTF-8 encoding checker, based on [kikito's utf_validator.lua](https://github.com/kikito/utf8_validator.lua). Depending on the input, this function can be faster than `utf8Tools.check()` in PUC-Lua.
+
+`local ok, byte = utf8Tools.checkAlt(s, [i])`
+
+* `s`: The string to check.
+
+* `[i]`: *(empty string: 0; non-empty string: 1)* The first byte index.
+
+**Returns:** If no problems were found, the total number of code points scanned. Otherwise, `nil` and byte index.
+
+**Notes:**
+
+* As a special case, this function will return `0` when given an empty string, regardless of what is provided for `i`.
+
+* For non-empty strings, if the start byte is specified, then `i` needs to point to a UTF-8 Start Byte.
+
+* This function *always* rejects surrogate values, regardless of what has been set with `utf8Tools.setCheckSurrogates()`.
+
+
+## utf8Tools.scrub
 
 Replaces bad UTF-8 Sequences in a string.
 
-`local str = utf8Tools.scrub(s, repl)`
+`local str = utf8Tools.scrub(s, repl, alt)`
 
 * `s`: The string to scrub.
 
-* `repl`: A replacement string to use in place of the bad UTF-8 Sequences. Use an empty string to just remove the invalid bytes.
+* `repl`: A replacement string to use in place of the bad UTF-8 Sequences. Use an empty string to remove the invalid bytes.
+
+* `alt`: *(false)* When `true`, uses `utf8Tools.checkAlt()` internally rather than `utf8Tools.check()`.
 
 
 **Returns:** The scrubbed UTF-8 string.
 
 
-### utf8Tools.codeFromString
+## utf8Tools.codeFromString
 
 Gets a Unicode Code Point and its isolated UTF-8 Sequence from a string.
 
@@ -79,11 +117,10 @@ Gets a Unicode Code Point and its isolated UTF-8 Sequence from a string.
 
 * `[i]`: *(1)* The byte position to read from. Must point to a valid UTF-8 Start Byte.
 
-
 **Returns:** The code point number and its equivalent UTF-8 Sequence as a string, or `nil` plus an error string if unsuccessful.
 
 
-### utf8Tools.stringFromCode
+## utf8Tools.stringFromCode
 
 Converts a code point in numeric form to a UTF-8 Sequence (string).
 
@@ -94,7 +131,7 @@ Converts a code point in numeric form to a UTF-8 Sequence (string).
 **Returns:** the UTF-8 Sequence (string), or `nil` plus an error string if unsuccessful.
 
 
-### utf8Tools.step
+## utf8Tools.step
 
 Looks for a Start Byte from a byte position through to the end of the string.
 
@@ -113,7 +150,7 @@ This function **does not validate** the encoding.
 * With empty strings, the only accepted position for `i` is 0.
 
 
-### utf8Tools.stepBack
+## utf8Tools.stepBack
 
 Looks for a Start Byte from a byte position through to the start of the string.
 
@@ -132,7 +169,7 @@ This function **does not validate** the encoding.
 * With empty strings, the only accepted position for `i` is 1.
 
 
-### utf8Tools.codes
+## utf8Tools.codes
 
 A loop iterator for code points in a UTF-8 string, where `i` is the byte position, `c` is the code point number, and `u` is the code point's UTF-8 substring.
 
@@ -145,7 +182,7 @@ This function **raises a Lua error** if it encounters a problem with the UTF-8 e
 **Returns:** The byte position `i`, the code point number `c`, and the code point's UTF-8 string representation `u`.
 
 
-### utf8Tools.concatCodes
+## utf8Tools.concatCodes
 
 Creates a UTF-8 string from one or more code point numbers.
 
@@ -162,11 +199,9 @@ This function **raises a Lua error** if it encounters a problem with the code po
 * This function allocates a temporary table. To convert single code points, `utf8Tools.stringFromCode()` can be used instead.
 
 
-# utf8Conv
+# utf8Conv API
 
-## utf8Conv API
-
-### utf8Conv.latin1_utf8
+## utf8Conv.latin1_utf8
 
 Converts a Latin 1 (ISO 8859-1) string to UTF-8.
 
@@ -177,7 +212,7 @@ Converts a Latin 1 (ISO 8859-1) string to UTF-8.
 **Returns:** The converted UTF-8 string, or `nil`, error string, and byte index if there was a problem.
 
 
-### utf8Conv.utf8_latin1
+## utf8Conv.utf8_latin1
 
 Converts a UTF-8 string to Latin 1 (ISO 8859-1).
 
@@ -192,7 +227,7 @@ Only code points 0 through 255 can be directly mapped to a Latin 1 string. Use t
 **Returns:** The converted Latin 1 string, or `nil`, error string, and byte index if there was a problem.
 
 
-### utf8Tools.utf16_utf8
+## utf8Tools.utf16_utf8
 
 Converts a UTF-16 string to UTF-8.
 
@@ -205,7 +240,7 @@ Converts a UTF-16 string to UTF-8.
 **Returns:** The converted UTF-8 string, or `nil`, error string, and byte index if there was a problem.
 
 
-### utf8Conv.utf8_utf16
+## utf8Conv.utf8_utf16
 
 Converts a UTF-8 string to UTF-16.
 
@@ -231,7 +266,15 @@ Converts a UTF-8 string to UTF-16.
 
 # License (MIT)
 
+```
+MIT License
+
 Copyright (c) 2022 - 2024 RBTS
+
+`utf8Tools.checkAlt()` is a modified version of `utf8_validator.lua` by
+kikito (also MIT): https://github.com/kikito/utf8_validator.lua
+
+Copyright (c) 2013 Enrique García Cota
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -250,3 +293,4 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```

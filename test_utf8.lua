@@ -9,7 +9,7 @@ local utf8Tools = require(PATH .. "utf8_tools")
 
 
 local function resetOpts()
-	utf8Tools.options.check_surrogates = true
+	utf8Tools.setCheckSurrogates(true)
 end
 
 
@@ -80,6 +80,7 @@ Functions affected by options:
 | Function                   | check_surrogates |
 +----------------------------+------------------+
 | utf8Tools.check()          | Yes              |
+| utf8Tools.checkAlt()       | No               |
 | utf8Tools.codeFromString() | Yes              |
 | utf8Tools.codes()          | Yes              |
 | utf8Tools.concatCodes()    | Yes              |
@@ -185,7 +186,7 @@ self:registerJob("utf8Tools.codeFromString", function(self)
 
 	do
 		self:print(3, "[+] with 'check_surrogates' disabled")
-		utf8Tools.options.check_surrogates = false
+		utf8Tools.setCheckSurrogates(false)
 		local code, u8_str = utf8Tools.codeFromString(surr_0xd800)
 		self:print(4, code, u8_str)
 		self:isEvalTrue(code)
@@ -275,9 +276,9 @@ self:registerJob("utf8Tools.check", function(self)
 	self:expectLuaError("arg #2 too high", utf8Tools.check, "foobar", 10000)
 
 	self:expectLuaError("arg #3 bad type", utf8Tools.check, "foobar", 1, {})
-	self:expectLuaError("arg #3 not an integer", utf8Tools.check, "foobar", 1, 2.2)
-	self:expectLuaError("arg #3 too low (lower than #2)", utf8Tools.check, "foobar", 3, 1)
-	self:expectLuaError("arg #3 too high", utf8Tools.check, "foobar", 3, 10000)
+	self:expectLuaError("arg #3 not an integer", utf8Tools.check, "foobar", 1, 1.1)
+	self:expectLuaError("arg #3 too low", utf8Tools.check, "foobar", 1, -1)
+	self:expectLuaError("arg #3 too high", utf8Tools.check, "foobar", 1, 10000)
 
 	do
 		self:print(3, "[-] corrupt UTF-8 detection")
@@ -318,7 +319,7 @@ self:registerJob("utf8Tools.check", function(self)
 	do
 		self:print(3, "[+] with 'check_surrogates' disabled")
 		resetOpts()
-		utf8Tools.options.check_surrogates = false
+		utf8Tools.setCheckSurrogates(false)
 		local n_codes, err, i = utf8Tools.check("foo" .. surr_0xd800 .. "bar")
 		self:print(4, n_codes, i, err)
 		self:isEqual(n_codes, 7)
@@ -339,6 +340,70 @@ end
 
 
 -- [===[
+self:registerFunction("utf8Tools.checkAlt", utf8Tools.check)
+
+self:registerJob("utf8Tools.checkAlt", function(self)
+	resetOpts()
+
+	self:expectLuaError("arg #1 bad type", utf8Tools.checkAlt, nil)
+
+	self:expectLuaError("arg #2 bad type", utf8Tools.checkAlt, "foobar", {})
+	self:expectLuaError("arg #2 not an integer", utf8Tools.checkAlt, "foobar", 1.1)
+	self:expectLuaError("arg #2 too low", utf8Tools.checkAlt, "foobar", -1)
+	self:expectLuaError("arg #2 too high", utf8Tools.checkAlt, "foobar", 10000)
+
+	do
+		self:print(3, "[-] corrupt UTF-8 detection")
+		local n_codes, err, i = utf8Tools.checkAlt("goodgoodgoodgoodgoodb" .. hex(0xf0, 0x80, 0xe0) .. "d")
+		self:print(4, "(should return nil, 22)")
+		self:print(4, n_codes, i)
+		self:isEvalFalse(n_codes)
+		self:isEqual(i, 22)
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] good UTF-8 detection")
+		local n_codes, err, i = utf8Tools.checkAlt("!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀")
+		self:print(4, n_codes, i)
+		self:isEqual(n_codes, 16) -- 16 code points
+		self:lf(4)
+
+	end
+
+	do
+		self:print(3, "[+] good UTF-8 detection starting after byte 1")
+		local n_codes, err, i = utf8Tools.checkAlt("!@~¡Æøſㇱㇹ㈅꠲꠹𐅀𐅁𐅅𰀀", 2) -- "@~..."
+		self:print(4, n_codes, i)
+		self:isEqual(n_codes, 15) -- 15 code points
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[-] invalid surrogate pair")
+		resetOpts()
+		local n_codes, err, i = utf8Tools.checkAlt("foo" .. surr_0xd800 .. "bar")
+		self:print(4, n_codes, i)
+		self:isEvalFalse(n_codes)
+		self:lf(4)
+	end
+
+	-- utf8Tools.checkAlt() always rejects surrogate values.
+
+	do
+		self:print(3, "[-] invalid UTF-8 byte")
+		local n_codes, err, i = utf8Tools.checkAlt("foo" .. str_invalid_byte .. "bar")
+		self:print(4, n_codes, i)
+		self:isEvalFalse(n_codes)
+		self:lf(4)
+	end
+end
+)
+--]===]
+
+
+
+-- [===[
 self:registerFunction("utf8Tools.scrub", utf8Tools.scrub)
 
 self:registerJob("utf8Tools.scrub", function(self)
@@ -346,11 +411,20 @@ self:registerJob("utf8Tools.scrub", function(self)
 
 	self:expectLuaError("arg #1 bad type", utf8Tools.scrub, nil, "x")
 	self:expectLuaError("arg #2 bad type", utf8Tools.scrub, "foo", nil)
+	-- don't type-check arg 3 (alt).
 
 	do
 		self:print(3, "[+] Good input, nothing to scrub")
 		local good_str = "The good string."
 		local str = utf8Tools.scrub(good_str, "x")
+		self:isEqual(str, good_str)
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] Good input, nothing to scrub (alt)")
+		local good_str = "The good string."
+		local str = utf8Tools.scrub(good_str, "x", true)
 		self:isEqual(str, good_str)
 		self:lf(4)
 	end
@@ -364,9 +438,25 @@ self:registerJob("utf8Tools.scrub", function(self)
 	end
 
 	do
+		self:print(3, "[+] Malformed input, replace invalid bytes (alt)")
+		local bad_str = "The b" .. hex(0xff, 0xff, 0xff) .. "d string."
+		local str = utf8Tools.scrub(bad_str, "x", true)
+		self:isEqual(str, "The bxd string.")
+		self:lf(4)
+	end
+
+	do
 		self:print(3, "[+] Malformed input, delete invalid bytes")
 		local bad_str = "The b" .. hex(0xff, 0xff, 0xff) .. "d string."
 		local str = utf8Tools.scrub(bad_str, "")
+		self:isEqual(str, "The bd string.")
+		self:lf(4)
+	end
+
+	do
+		self:print(3, "[+] Malformed input, delete invalid bytes (alt)")
+		local bad_str = "The b" .. hex(0xff, 0xff, 0xff) .. "d string."
+		local str = utf8Tools.scrub(bad_str, "", true)
 		self:isEqual(str, "The bd string.")
 		self:lf(4)
 	end
@@ -382,15 +472,27 @@ self:registerJob("utf8Tools.scrub", function(self)
 	end
 
 	do
+		self:print(3, "[+] Input with surrogate pair; replace (alt)")
+		resetOpts()
+		local surr_str = "abc" .. surr_0xd800 .. "def"
+		local str = utf8Tools.scrub(surr_str, "_", true)
+		self:isEqual(str, "abc_def")
+		resetOpts()
+		self:lf(4)
+	end
+
+	do
 		self:print(3, "[+] Input with surrogate pair: ignore")
 		resetOpts()
-		utf8Tools.options.check_surrogates = false
+		utf8Tools.setCheckSurrogates(false)
 		local surr_str = "abc" .. surr_0xd800 .. "def"
 		local str = utf8Tools.scrub(surr_str, "_")
 		self:isEqual(str, surr_str)
 		resetOpts()
 		self:lf(4)
 	end
+
+	-- checkAlt() always rejects surrogate pairs.
 end
 )
 --]===]
@@ -451,7 +553,7 @@ self:registerJob("utf8Tools.stringFromCode", function(self)
 	do
 		self:print(3, "[+] with 'check_surrogates' disabled")
 		resetOpts()
-		utf8Tools.options.check_surrogates = false
+		utf8Tools.setCheckSurrogates(false)
 		local u8_str, err = utf8Tools.stringFromCode(0xd800)
 		self:print(4, u8_str, err)
 		self:isEvalTrue(u8_str)
@@ -484,7 +586,7 @@ self:registerJob("utf8Tools.codes", function(self)
 	resetOpts()
 	self:expectLuaError("surrogate byte (excluded)", func, "foo" .. surr_0xd800 .. "bar")
 
-	utf8Tools.options.check_surrogates = false
+	utf8Tools.setCheckSurrogates(false)
 	self:expectLuaReturn("surrogate byte (allowed)", func, "foo" .. surr_0xd800 .. "bar")
 	resetOpts()
 end
@@ -522,7 +624,7 @@ self:registerJob("utf8Tools.concatCodes", function(self)
 	resetOpts()
 	self:expectLuaError("surrogate byte (excluded)", utf8Tools.concatCodes, 0x40, 0xd800, 0x40)
 
-	utf8Tools.options.check_surrogates = false
+	utf8Tools.setCheckSurrogates(false)
 	self:expectLuaReturn("surrogate byte (allowed)", utf8Tools.concatCodes, 0x40, 0xd800, 0x40)
 	resetOpts()
 	self:lf(4)
