@@ -72,7 +72,7 @@ Checks a UTF-8 string for encoding problems and invalid code points.
 
 ## utf8Tools.checkAlt
 
-An alternative UTF-8 encoding checker, based on [kikito's utf_validator.lua](https://github.com/kikito/utf8_validator.lua). Depending on the input, this function can be faster than `utf8Tools.check()` in PUC-Lua.
+An alternative UTF-8 encoding checker, based on [kikito's utf_validator.lua](https://github.com/kikito/utf8_validator.lua). Depending on the input, this function can be faster than `utf8Tools.check()` in PUC-Lua (though if you have access to Lua 5.4's `utf8` library, then `utf8.len()` will likely be faster).
 
 `local ok, byte = utf8Tools.checkAlt(s, [i])`
 
