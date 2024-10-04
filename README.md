@@ -272,9 +272,7 @@ MIT License
 
 Copyright (c) 2022 - 2024 RBTS
 
-`utf8Tools.checkAlt()` is a modified version of `utf8_validator.lua` by
-kikito (also MIT): https://github.com/kikito/utf8_validator.lua
-
+Code from https://github.com/kikito/utf8_validator.lua:
 Copyright (c) 2013 Enrique García Cota
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
