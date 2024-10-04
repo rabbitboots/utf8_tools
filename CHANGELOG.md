@@ -1,5 +1,20 @@
 # utf8Tools Changelog
 
+# v1.4.1 (4 Oct 2024)
+
+* Renamed test files:
+  * `test_utf8.lua` -> `test_utf8_tools.lua`
+  * `test_conv.lua` -> `test_utf8_conv.lua`
+
+* Deleted the LÖVE test (`main.lua`, `conf.lua`).
+
+* Flattened `test` directory, and gathered the license text for test libraries in `test_LICENSE`.
+
+* Integrated PILE modules (boilerplate).
+
+* Rewrote the license notice (w.r.t. kikito/utf8_validator.lua) to be a little less clunky.
+
+
 # v1.4.0 (4 Sept 2024)
 
 **NOTE:** This is an API-breaking update.

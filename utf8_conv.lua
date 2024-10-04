@@ -1,4 +1,5 @@
 -- Auxiliary encoding functions for utf8Tools.
+-- v1.4.1
 -- https://github.com/rabbitboots/utf8_tools
 -- License: MIT
 
@@ -6,6 +7,8 @@
 local PATH = ... and (...):match("(.-)[^%.]+$") or ""
 
 
+local _argType = require(PATH .. "pile_arg_check").type
+local interp = require(PATH .. "pile_interp")
 local utf8Tools = require(PATH .. "utf8_tools")
 
 
@@ -19,9 +22,7 @@ local lang = {
 }
 
 
-local interp, _argType, stringFromCode, codeFromString, step = utf8Tools._interp,
-	utf8Tools._argType, utf8Tools.stringFromCode, utf8Tools.codeFromString,
-	utf8Tools.step
+local stringFromCode, codeFromString, step = utf8Tools.stringFromCode, utf8Tools.codeFromString, utf8Tools.step
 
 
 local concat, char = table.concat, string.char

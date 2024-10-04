@@ -1,17 +1,18 @@
-**Version:** 1.4.0
+**Version:** 1.4.1
 
 # utf8Tools
 
-UTF-8 utility functions for Lua.
+UTF-8 utility functions for Lua 5.1 - 5.4.
 
-Tested with Lua 5.1.5, Lua 5.2.4, Lua 5.3.6, Lua 5.4.6 and LuaJIT 2.1.1707061634 on Fedora 39, and Lua 5.1.5 on Windows 10.
+## Package Information
 
+`utf8_tools.lua` is the main file.
 
-## Files
+`utf8_conv.lua` contains auxiliary functions for converting UTF-16 and ISO 8859-1 (Latin-1) to UTF-8 and back.
 
-* `utf8_tools.lua`: The main file.
+Files beginning with `pile` are required.
 
-* `utf8_conv.lua`: Auxiliary functions for converting UTF-16 and ISO 8859-1 (Latin-1) to UTF-8 and back.
+Files and folders beginning with `test` can be deleted.
 
 
 ## Terminology

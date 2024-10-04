@@ -1,9 +1,9 @@
+-------------------------------------------------------------------------------
+test/err_test.lua:
+
 MIT License
 
 Copyright (c) 2022 - 2024 RBTS
-
-Code from https://github.com/kikito/utf8_validator.lua:
-Copyright (c) 2013 Enrique García Cota
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,3 +22,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+test/strict.lua:
+
+Distributed under the Lua license: http://www.lua.org/license.html

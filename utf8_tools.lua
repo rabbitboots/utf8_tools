@@ -1,4 +1,5 @@
--- utf8Tools v1.4.0
+-- utf8Tools
+-- v1.4.1
 -- https://github.com/rabbitboots/utf8_tools
 
 
@@ -7,9 +8,7 @@ MIT License
 
 Copyright (c) 2022 - 2024 RBTS
 
-`utf8Tools.checkAlt()` is a modified version of `utf8_validator.lua` by
-kikito (also MIT): https://github.com/kikito/utf8_validator.lua
-
+Code from https://github.com/kikito/utf8_validator.lua:
 Copyright (c) 2013 Enrique García Cota
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,9 +35,6 @@ local floor, char, concat, type = math.floor, string.char, table.concat, type
 
 
 local lang = {
-	arg_bad_int = "argument #$1: expected integer",
-	arg_bad_int_range = "argument #$1: expected integer in range ($2-$3)",
-	arg_bad_type = "argument #$1: bad type (expected $2, got $3)",
 	arg_start_end_oob = "start index is greater than end index",
 	byte_nil = "byte #$1 is nil",
 	byte_cont_oob = "continuation byte #$1 ($2) is out of range (0x80 - 0xbf)",
@@ -54,19 +50,14 @@ local lang = {
 }
 
 
-local interp -- v v02
-do
-	local v, c = {}, function(t) for k in pairs(t) do t[k] = nil end end
-	interp = function(s, ...)
-		c(v)
-		for i = 1, select("#", ...) do
-			v[tostring(i)] = tostring(select(i, ...))
-		end
-		local r = tostring(s):gsub("%$(%d+)", v):gsub("%$;", "$")
-		c(v)
-		return r
-	end
-end
+local PATH = ... and (...):match("(.-)[^%.]+$") or ""
+
+
+local interp = require(PATH .. "pile_interp")
+local pArg = require(PATH .. "pile_arg_check")
+
+
+local _argType, _argInt, _argIntRange = pArg.type, pArg.int, pArg.intRange
 
 
 local check_surrogates = true
@@ -89,27 +80,6 @@ end
 
 -- Verifies code point length against allowed UTF-8 byte ranges (1, 2, 3, 4).
 local min_max = {{0x0, 0x7f}, {0x80, 0x7ff}, {0x800, 0xffff}, {0x10000, 0x10ffff}}
-
-
-local function _argType(n, v, e)
-	if type(v) ~= e then
-		error(interp(lang.arg_bad_type, n, e, type(v)), 2)
-	end
-end
-
-
-local function _argInt(n, v)
-	if type(v) ~= "number" or floor(v) ~= v then
-		error(interp(lang.arg_bad_int, n), 2)
-	end
-end
-
-
-local function _argIntRange(n, v, min, max)
-	if type(v) ~= "number" or floor(v) ~= v or v < min or v > max then
-		error(interp(lang.arg_bad_int_range, n, min, max), 2)
-	end
-end
 
 
 local function _length(b)
@@ -396,8 +366,6 @@ end
 
 return {
 	lang = lang,
-	_interp = interp,
-	_argType = _argType,
 	getCheckSurrogates = getCheckSurrogates,
 	setCheckSurrogates = setCheckSurrogates,
 	step = step,
