@@ -1,5 +1,10 @@
 **Version:** 1.4.1
 
+# Archived Repository
+
+This module has been integrated into [PILE Base](https://github.com/rabbitboots/pile_base) (with the [kikito/utf8_validator.lua](https://github.com/kikito/utf8_validator.lua) code removed).
+
+
 # utf8Tools
 
 UTF-8 utility functions for Lua 5.1 - 5.4.
