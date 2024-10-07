@@ -228,7 +228,7 @@ Only code points 0 through 255 can be directly mapped to a Latin 1 string. Use t
 **Returns:** The converted Latin 1 string, or `nil`, error string, and byte index if there was a problem.
 
 
-## utf8Tools.utf16_utf8
+## utf8Conv.utf16_utf8
 
 Converts a UTF-16 string to UTF-8.
 
